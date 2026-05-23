@@ -1,0 +1,21 @@
+name: weekly-scrape
+
+on:
+  schedule:
+    - cron: "0 0 * * 0"  # Every Sunday at 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install uv
+      - run: uv pip install --system -e .
+      - name: Scrape reviews
+        run: python -m moviesentiment.cli scrape
+      - name: Push data to DVC remote
+        run: dvc push data/raw

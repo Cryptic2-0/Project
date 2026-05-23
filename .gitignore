@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# DVC — .dvc/ config dir and *.dvc pointer files are tracked in git
+# DVC manages its own .gitignore inside data/ and models/
+/data/raw/
+/data/interim/
+/data/processed/
+/models/*.joblib
+/models/*.onnx
+/models/*.pt
+/models/*.bin
+
+# MLflow
+mlflow.db
+mlruns/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.key
+*.pem
+
+# Build artifacts
+*.so
+*.dylib
+
+# Metrics (generated)
+metrics/
+
+# Logs
+*.log
+logs/

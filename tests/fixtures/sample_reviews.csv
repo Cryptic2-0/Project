@@ -1,0 +1,9 @@
+review_id,movie_id,text,rating,scraped_at,label
+1,tt0111161,"A <b>truly</b> remarkable film. https://example.com",9,2024-01-01,positive
+2,tt0111161,"Absolute garbage, boring and slow.",2,2024-01-01,negative
+3,tt0068646,"One of the greatest films ever made.",10,2024-01-02,positive
+4,tt0068646,"I fell asleep halfway through.",3,2024-01-02,negative
+5,tt0071562,"A masterpiece of cinema.",8,2024-01-03,positive
+6,tt0071562,"Overhyped and disappointing.",1,2024-01-03,negative
+7,tt0468569,"The best superhero movie ever.",9,2024-01-04,positive
+8,tt0468569,"Too long and convoluted.",2,2024-01-04,negative

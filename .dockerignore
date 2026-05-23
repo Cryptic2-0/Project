@@ -1,0 +1,15 @@
+data/
+notebooks/
+models/*.bin
+models/*.pt
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+mlruns/
+mlflow.db
+*.log

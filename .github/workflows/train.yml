@@ -1,0 +1,30 @@
+name: weekly-retrain
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"  # Every Monday at 02:00 UTC
+  workflow_dispatch:
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install uv
+      - run: uv pip install --system -e .
+      - name: Pull data
+        run: dvc pull data/processed
+      - name: Train baseline
+        run: python -m moviesentiment.cli train baseline
+      - name: Check if model improved
+        id: eval
+        run: |
+          python -c "
+          import json, sys
+          new = json.load(open('metrics/baseline.json'))
+          # TODO: compare against current production model
+          print('macro_f1=' + str(new['macro_f1']))
+          "

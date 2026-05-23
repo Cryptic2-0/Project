@@ -1,0 +1,51 @@
+stages:
+  scrape:
+    cmd: python -m moviesentiment.cli scrape --out data/raw/reviews.parquet
+    outs:
+      - data/raw/reviews.parquet
+
+  clean:
+    cmd: python -m moviesentiment.cli clean --inp data/raw/reviews.parquet --out data/interim/clean.parquet
+    deps:
+      - data/raw/reviews.parquet
+      - src/moviesentiment/data/clean.py
+    outs:
+      - data/interim/clean.parquet
+
+  split:
+    cmd: python -m moviesentiment.cli split --inp data/interim/clean.parquet --out-dir data/processed
+    deps:
+      - data/interim/clean.parquet
+      - src/moviesentiment/data/split.py
+    params:
+      - split.test_size
+      - split.val_size
+      - split.seed
+    outs:
+      - data/processed/train.parquet
+      - data/processed/val.parquet
+      - data/processed/test.parquet
+
+  train_baseline:
+    cmd: python -m moviesentiment.cli train baseline
+    deps:
+      - data/processed/train.parquet
+      - data/processed/val.parquet
+      - src/moviesentiment/models/baseline.py
+    params:
+      - baseline
+    metrics:
+      - metrics/baseline.json:
+          cache: false
+
+  train_transformer:
+    cmd: python -m moviesentiment.cli train transformer
+    deps:
+      - data/processed/train.parquet
+      - data/processed/val.parquet
+      - src/moviesentiment/models/transformer.py
+    params:
+      - transformer
+    metrics:
+      - metrics/transformer.json:
+          cache: false
