@@ -43,14 +43,4 @@ stages:
       - metrics/baseline.json:
           cache: false
 
-  train_transformer:
-    cmd: python -m moviesentiment.cli train transformer
-    deps:
-      - data/processed/train.parquet
-      - data/processed/val.parquet
-      - src/moviesentiment/models/transformer.py
-    params:
-      - transformer
-    metrics:
-      - metrics/transformer.json:
-          cache: false
+  # train_transformer: added back in Week 2 once GPU training is implemented

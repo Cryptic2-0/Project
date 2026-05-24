@@ -1,5 +1,5 @@
 [core]
-    remote = gdrive
-['remote "gdrive"']
-    url = gdrive://1RS7ruBt487rKfNucoWt6Q7xINmjI2eSI
-    gdrive_acknowledge_abuse = true
+    remote = s3remote
+['remote "s3remote"']
+    url = s3://moviesentiment-dvc-soumya/dvc
+    region = ap-southeast-2

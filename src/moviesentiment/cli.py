@@ -31,7 +31,7 @@ def scrape(
                     ids = [str(mid) for mid in raw_ids if mid]
 
     n = scrape_reviews(movie_ids=ids, out_path=out, source=source)
-    typer.echo(f"Scraped {n} reviews → {out}")
+    typer.echo(f"Scraped {n} reviews -> {out}")
 
 
 @app.command()
@@ -43,7 +43,7 @@ def clean(
     from moviesentiment.data.clean import clean_reviews
 
     n = clean_reviews(inp, out)
-    typer.echo(f"Cleaned {n} reviews → {out}")
+    typer.echo(f"Cleaned {n} reviews -> {out}")
 
 
 @app.command()
@@ -55,7 +55,7 @@ def split(
     from moviesentiment.data.split import split_dataset
 
     counts = split_dataset(inp, out_dir)
-    typer.echo(f"Split → {counts}")
+    typer.echo(f"Split -> {counts}")
 
 
 @app.command()
