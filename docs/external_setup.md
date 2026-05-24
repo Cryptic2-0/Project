@@ -7,13 +7,13 @@ manual one-time steps. Check each item off as you complete it.
 
 ## Immediate (needed before the pipeline can run end-to-end)
 
-- [ ] **Push local commits to GitHub**
+- [x] **Push local commits to GitHub**
   The repo currently has 3 unpushed commits (scraper + Day 3 tests).
   ```powershell
   git push origin main
   ```
 
-- [ ] **Configure a DVC remote**
+- [x] **Configure a DVC remote**
   Without a remote, `dvc push` / `dvc pull` don't work and the pipeline
   can't be reproduced by anyone else (or by CI).
   Easiest free option — Google Drive:
@@ -32,7 +32,7 @@ manual one-time steps. Check each item off as you complete it.
 
 ## Week 1 (before Day 4 baseline training)
 
-- [ ] **Run the DVC pipeline locally for the first time**
+- [x] **Run the DVC pipeline locally for the first time**
   This downloads the HuggingFace dataset (~100 MB) and produces all
   intermediate Parquet files.
   ```powershell
@@ -156,9 +156,9 @@ manual one-time steps. Check each item off as you complete it.
 
 | Item | Status | Week |
 |------|--------|------|
-| Push local commits | pending | Now |
-| DVC remote configured | pending | Now |
-| DVC pipeline run locally | pending | Week 1 |
+| Push local commits | done | Now |
+| DVC remote configured | done | Now |
+| DVC pipeline run locally | done | Week 1 |
 | Docker Desktop installed | pending | Week 1 |
 | GPU access (Colab / Kaggle) | pending | Week 2 |
 | Fly.io account + flyctl | pending | Week 3 |
