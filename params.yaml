@@ -1,3 +1,16 @@
+scrape:
+  movie_ids:
+    - tt0111161  # The Shawshank Redemption
+    - tt0068646  # The Godfather
+    - tt0468569  # The Dark Knight
+    - tt1375666  # Inception
+    - tt0050083  # 12 Angry Men
+    - tt0110912  # Pulp Fiction
+    - tt0137523  # Fight Club
+    - tt0816692  # Interstellar
+    - tt0245429  # Spirited Away
+    - tt6751668  # Parasite
+
 split:
   test_size: 0.15
   val_size: 0.15

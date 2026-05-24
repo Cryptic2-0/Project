@@ -1,6 +1,10 @@
 stages:
   scrape:
     cmd: python -m moviesentiment.cli scrape --out data/raw/reviews.parquet
+    deps:
+      - src/moviesentiment/data/scrape.py
+    params:
+      - scrape.movie_ids
     outs:
       - data/raw/reviews.parquet
 

@@ -11,10 +11,24 @@ app = typer.Typer(help="MovieSentiment pipeline CLI")
 def scrape(
     out: Path = typer.Option(Path("data/raw/reviews.parquet"), help="Output Parquet path"),
 ) -> None:
-    """Scrape IMDb reviews and save as Parquet."""
+    """Scrape IMDb reviews and save as Parquet. Movie IDs are read from params.yaml."""
+    import yaml
+
     from moviesentiment.data.scrape import scrape_reviews
 
-    n = scrape_reviews(out_path=out)
+    ids: list[str] = []
+    params_path = Path("params.yaml")
+    if params_path.exists():
+        with open(params_path) as fh:
+            raw = yaml.safe_load(fh)
+        if isinstance(raw, dict):
+            section = raw.get("scrape") or {}
+            if isinstance(section, dict):
+                raw_ids = section.get("movie_ids") or []
+                if isinstance(raw_ids, list):
+                    ids = [str(mid) for mid in raw_ids if mid]
+
+    n = scrape_reviews(movie_ids=ids, out_path=out)
     typer.echo(f"Scraped {n} reviews → {out}")
 
 
