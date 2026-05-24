@@ -17,6 +17,7 @@ def scrape(
     from moviesentiment.data.scrape import scrape_reviews
 
     ids: list[str] = []
+    source = "hf"
     params_path = Path("params.yaml")
     if params_path.exists():
         with open(params_path) as fh:
@@ -24,11 +25,12 @@ def scrape(
         if isinstance(raw, dict):
             section = raw.get("scrape") or {}
             if isinstance(section, dict):
+                source = str(section.get("source") or "hf")
                 raw_ids = section.get("movie_ids") or []
                 if isinstance(raw_ids, list):
                     ids = [str(mid) for mid in raw_ids if mid]
 
-    n = scrape_reviews(movie_ids=ids, out_path=out)
+    n = scrape_reviews(movie_ids=ids, out_path=out, source=source)
     typer.echo(f"Scraped {n} reviews → {out}")
 
 

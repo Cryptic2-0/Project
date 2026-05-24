@@ -1,4 +1,11 @@
-"""IMDb review scraper — adapted from Imdb_review_scrapper-2026-."""
+"""IMDb review scraper.
+
+Two data sources:
+  hf   — HuggingFace stanfordnlp/imdb (50 K reviews, default, reproducible).
+  live — Live GraphQL scrape from IMDb using movie_ids from params.yaml.
+         Note: IMDb uses AWS WAF protection that blocks automated requests;
+         a browser-automation layer (e.g. Playwright) is required for live use.
+"""
 
 from __future__ import annotations
 
@@ -15,16 +22,63 @@ _LOG = logging.getLogger(__name__)
 
 _GRAPHQL_URL = "https://caching.graphql.imdb.com/"
 _PERSISTED_HASH = "d389bc70c27f09c00b663705f0112254e8a7c75cde1cfd30e63a2d98c1080c87"
-_BASE_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+_BASE_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 _PAGE_SIZE = 25
 _SLEEP_S = 0.8
+
+
+# ---------------------------------------------------------------------------
+# HuggingFace source
+# ---------------------------------------------------------------------------
+
+
+def _load_hf(out_path: Path) -> int:
+    """Download stanfordnlp/imdb and write Parquet with canonical schema."""
+    from datasets import load_dataset
+
+    _LOG.info("Downloading stanfordnlp/imdb from HuggingFace …")
+    dataset: Any = load_dataset("stanfordnlp/imdb")
+    scraped_at = datetime.now(timezone.utc).isoformat()
+    records: list[dict[str, Any]] = []
+
+    for split_name in ("train", "test"):
+        split: Any = dataset[split_name]
+        for i, item in enumerate(split):
+            records.append(
+                {
+                    "review_id": f"hf_{split_name}_{i}",
+                    "movie_id": "hf_imdb",
+                    "text": str(item["text"]),
+                    "rating": None,
+                    "scraped_at": scraped_at,
+                    "label": int(item["label"]),
+                }
+            )
+        _LOG.info("  %s: %d reviews", split_name, len(split))
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(records).to_parquet(out_path, index=False)
+    _LOG.info("Wrote %d reviews to %s", len(records), out_path)
+    return len(records)
+
+
+# ---------------------------------------------------------------------------
+# Live IMDb GraphQL source
+# ---------------------------------------------------------------------------
 
 
 def _prime_session(movie_id: str) -> requests.Session:
     session = requests.Session()
     session.get(
         f"https://www.imdb.com/title/{movie_id}/reviews/",
-        headers={"User-Agent": _BASE_UA, "Accept-Language": "en-US,en;q=0.9"},
+        headers={
+            "User-Agent": _BASE_UA,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
         timeout=30,
     )
     return session
@@ -69,7 +123,11 @@ def _fetch_page(
         timeout=30,
     )
     resp.raise_for_status()
-    block: dict[str, Any] = resp.json()["data"]["title"]["reviews"]
+    data: dict[str, Any] = resp.json()
+    if "errors" in data:
+        msgs = [str(e.get("message", "")) for e in data.get("errors", [])]
+        raise RuntimeError(f"IMDb GraphQL errors for {movie_id}: {msgs}")
+    block: dict[str, Any] = data["data"]["title"]["reviews"]
     next_cursor: str | None = (
         block["pageInfo"]["endCursor"] if block["pageInfo"]["hasNextPage"] else None
     )
@@ -93,20 +151,11 @@ def _parse_edge(edge: dict[str, Any], movie_id: str, scraped_at: str) -> dict[st
     }
 
 
-def scrape_reviews(
-    movie_ids: list[str] | None = None,
-    out_path: Path = Path("data/raw/reviews.parquet"),
-    max_pages: int | None = None,
+def _scrape_live(
+    movie_ids: list[str],
+    out_path: Path,
+    max_pages: int | None,
 ) -> int:
-    """Scrape IMDb reviews for the given movie IDs and write to Parquet.
-
-    Output schema: review_id, movie_id, text, rating, scraped_at, label
-    Label: rating >= 7 → 1 (positive), rating <= 4 → 0 (negative). Neutrals dropped.
-    Returns number of reviews written.
-    """
-    if movie_ids is None:
-        movie_ids = []
-
     scraped_at = datetime.now(timezone.utc).isoformat()
     records: list[dict[str, Any]] = []
 
@@ -115,7 +164,6 @@ def scrape_reviews(
         session = _prime_session(movie_id)
         cursor: str | None = None
         page = 1
-
         while True:
             edges, cursor = _fetch_page(session, movie_id, cursor)
             _LOG.info("  page %d: %d edges", page, len(edges))
@@ -129,7 +177,32 @@ def scrape_reviews(
             time.sleep(_SLEEP_S)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame(records)
-    df.to_parquet(out_path, index=False)
+    pd.DataFrame(records).to_parquet(out_path, index=False)
     _LOG.info("Wrote %d reviews to %s", len(records), out_path)
     return len(records)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def scrape_reviews(
+    movie_ids: list[str] | None = None,
+    out_path: Path = Path("data/raw/reviews.parquet"),
+    max_pages: int | None = None,
+    source: str = "hf",
+) -> int:
+    """Fetch IMDb reviews and write to Parquet.
+
+    source='hf'   — HuggingFace stanfordnlp/imdb (50 K reviews, default, reproducible).
+    source='live' — Live GraphQL scrape using movie_ids. Requires WAF bypass.
+
+    Output schema: review_id, movie_id, text, rating, scraped_at, label
+    Returns number of reviews written.
+    """
+    if source == "hf":
+        return _load_hf(out_path)
+    if source == "live":
+        return _scrape_live(movie_ids or [], out_path, max_pages)
+    raise ValueError(f"Unknown source {source!r}. Use 'hf' or 'live'.")

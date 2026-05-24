@@ -4,6 +4,7 @@ stages:
     deps:
       - src/moviesentiment/data/scrape.py
     params:
+      - scrape.source
       - scrape.movie_ids
     outs:
       - data/raw/reviews.parquet
