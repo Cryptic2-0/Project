@@ -46,6 +46,7 @@ Thumbs.db
 .env
 *.key
 *.pem
+*_accessKeys.csv
 
 # Build artifacts
 *.so
@@ -63,7 +64,7 @@ logs/
 skills-lock.json
 
 # SageMaker run logs
-sagemaker_run*.log
+logs/sagemaker/
 
 # Session activity logs (written by .claude/log_session.ps1 hook)
 /logs/
