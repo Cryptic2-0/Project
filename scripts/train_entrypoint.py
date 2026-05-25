@@ -25,7 +25,15 @@ def main() -> None:
     _run([sys.executable, "-m", "pip", "install", "transformers>=4.46", "--quiet", "--upgrade"])
 
     dvc = Path(sys.executable).parent / "dvc"
-    _run([str(dvc), "pull", "data/processed/"])
+    _run(
+        [
+            str(dvc),
+            "pull",
+            "data/processed/train.parquet",
+            "data/processed/val.parquet",
+            "data/processed/test.parquet",
+        ]
+    )
 
     from moviesentiment.models.transformer import train_transformer
 

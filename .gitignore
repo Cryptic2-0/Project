@@ -51,8 +51,8 @@ Thumbs.db
 *.so
 *.dylib
 
-# Metrics (generated)
-metrics/
+# Metrics (generated) — tracked in git per dvc.yaml cache: false
+# metrics/ is intentionally NOT ignored
 
 # Logs
 *.log
