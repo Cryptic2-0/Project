@@ -1,57 +1,131 @@
 # MovieSentiment
 
-> Production-style sentiment analysis for IMDb reviews. Built end-to-end as an MLOps portfolio project.
+> End-to-end MLOps sentiment analysis for IMDb reviews. Scrape → train → serve → monitor → retrain.
 
-[![ci](https://github.com/Cryptic2-0/moviesentiment/actions/workflows/ci.yml/badge.svg)](https://github.com/Cryptic2-0/moviesentiment/actions/workflows/ci.yml)
+[![CI](https://github.com/Cryptic2-0/moviesentiment/actions/workflows/ci.yml/badge.svg)](https://github.com/Cryptic2-0/moviesentiment/actions/workflows/ci.yml)
 
-**Status:** Work in progress — Week 1 (data pipeline + baseline model)
+**Live demo:** `curl -X POST https://moviesentiment.fly.dev/predict -H "Content-Type: application/json" -d '{"texts":["A masterpiece of modern cinema."]}'`
+
+---
 
 ## Architecture
 
 ```
-IMDb (web) → raw Parquet (DVC) → clean → split
-                                         ↓
-                          TF-IDF + LR   DistilBERT FT
-                                    ↘ ↙
-                             MLflow Tracking + Registry
-                                     ↓
-                              FastAPI (ONNX, Docker)
-                                     ↓
-                              Fly.io / HF Spaces
-                                     ↓
-                         Prometheus + Evidently drift
+IMDb / HuggingFace dataset
+         │ scrape (weekly GH Actions cron)
+         ▼
+  raw Parquet (DVC-tracked, S3)
+         │ clean + split
+         ▼
+  processed/ (train / val / test)
+         │ train
+    ┌────┴─────────────────┐
+    ▼                      ▼
+TF-IDF + LR          DistilBERT FT
+    └────┬─────────────────┘
+         │ log + register
+         ▼
+  MLflow Tracking + Model Registry
+         │ export → ONNX INT8
+         ▼
+  FastAPI + uvicorn (Dockerized)
+         │ deploy
+         ▼
+  Fly.io (1 shared CPU, 512 MB)
+         │
+    ┌────┴───────────────┐
+    ▼                    ▼
+Prometheus           Evidently
+    │                    │ drift_share > 0.3
+    ▼                    ▼
+Grafana         trigger retrain (GH Actions)
 ```
+
+---
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/Cryptic2-0/moviesentiment
 cd moviesentiment
+pip install uv
 uv pip install -e ".[dev]"
 dvc pull
-make train
-make serve
+make export-onnx   # exports base/fine-tuned model → ONNX INT8
+make serve         # starts FastAPI on :8000
 ```
+
+```bash
+curl -X POST http://localhost:8000/predict \
+     -H "Content-Type: application/json" \
+     -d '{"texts": ["A complete masterpiece.", "Worst film I have ever seen."]}'
+```
+
+---
 
 ## Results
 
-| Model | Accuracy | Macro F1 | p95 latency (CPU) | Size |
-|---|---|---|---|---|
-| TF-IDF + LR | TBD | TBD | TBD | TBD |
-| DistilBERT ONNX-INT8 | TBD | TBD | TBD | TBD |
+| Model | Accuracy | Macro F1 | ROC-AUC | p50 CPU (ms) | Size |
+|-------|----------|----------|---------|--------------|------|
+| TF-IDF + LR | ~0.89 | ~0.89 | ~0.96 | <5 ms | 18 MB |
+| DistilBERT ONNX-INT8 | ~0.92 | ~0.92 | ~0.98 | see [benchmarks](docs/benchmarks.md) | ~65 MB |
 
-## What I'd do differently in real production
+See [docs/benchmarks.md](docs/benchmarks.md) for full latency numbers.
 
-- Replace the SQLite MLflow backend with a managed Postgres + S3 artifact store.
-- Move from GitHub Actions cron to Airflow/Dagster once we have >5 pipelines.
+---
+
+## Reproduce
+
+```bash
+dvc repro                   # scrape → clean → split → train
+make export-onnx            # ONNX FP32 + INT8 + benchmark
+mlflow ui                   # view experiment runs at localhost:5000
+docker compose -f deploy/docker-compose.yml up   # full local stack
+```
+
+---
+
+## Monitoring
+
+Local stack (Prometheus + Grafana) via `docker compose`:
+
+- **Grafana**: http://localhost:3000 — dashboard auto-provisioned
+- **Prometheus**: http://localhost:9090 — scrapes `/metrics`
+- **Custom metrics**: `prediction_confidence`, `prediction_class_total`, `model_version_info`
+
+Drift detection:
+```bash
+moviesentiment drift   # compares prod logs vs training distribution → HTML report
+```
+
+---
+
+## CI/CD
+
+- **`ci.yml`**: lint (ruff + black), type-check (mypy), test (pytest ≥70% coverage), Docker build → GHCR push
+- **`train.yml`**: weekly retrain cron + `workflow_dispatch`; promotes model if F1 improves ≥0.5%
+- **`scrape.yml`**: weekly data refresh via HuggingFace dataset
+
+---
+
+## What I'd do differently in production
+
+- Replace SQLite MLflow backend with managed Postgres + S3 artifact store.
+- Add shadow-deploy: serve new model to 5% traffic for 24h before full promotion.
+- Use Airflow/Dagster once >5 pipelines need coordination.
 - Add a feature store (Feast) once features are shared across models.
-- Shadow-deploy new models for 24h before promotion instead of relying on offline metrics alone.
+- Replace `random.random() < 0.1` production sampling with reservoir sampling for guaranteed coverage.
+
+---
 
 ## Roadmap
 
 - [ ] Multi-language support (es, fr)
 - [ ] Active learning loop on low-confidence predictions
-- [ ] A/B testing harness
+- [ ] A/B testing harness with gradual rollout
+- [ ] Online learning for streaming reviews
+
+---
 
 ## License
 
