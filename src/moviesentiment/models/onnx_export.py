@@ -134,11 +134,11 @@ def main() -> None:
     int8_dir = settings.model_dir / "distilbert_onnx_int8"
     int8_path = int8_dir / "model.onnx"
 
-    print(f"[1/4] Exporting {model_src!r} → ONNX...")
+    print(f"[1/4] Exporting {model_src!r} ->ONNX...")
     fp32_path = export_to_onnx(model_src, onnx_dir)
     print(f"  FP32 ONNX: {fp32_path}  ({fp32_path.stat().st_size // 1024 // 1024} MB)")
 
-    print("[2/4] Quantizing → INT8...")
+    print("[2/4] Quantizing ->INT8...")
     quantize_onnx(fp32_path, int8_path)
     print(f"  INT8 ONNX: {int8_path}  ({int8_path.stat().st_size // 1024 // 1024} MB)")
 
@@ -157,7 +157,7 @@ def main() -> None:
 
     Path("metrics").mkdir(exist_ok=True)
     Path("metrics/onnx_benchmark.json").write_text(json.dumps(stats, indent=2))
-    print("\nDone. Benchmarks → docs/benchmarks.md | metrics/onnx_benchmark.json")
+    print("\nDone. Benchmarks ->docs/benchmarks.md | metrics/onnx_benchmark.json")
 
 
 if __name__ == "__main__":
