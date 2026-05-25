@@ -43,8 +43,8 @@ jobs:
 
       - name: Configure DVC S3 credentials
         run: |
-          dvc remote modify --local myremote access_key_id "${{ secrets.AWS_ACCESS_KEY_ID }}"
-          dvc remote modify --local myremote secret_access_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          dvc remote modify --local s3remote access_key_id "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          dvc remote modify --local s3remote secret_access_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
       - name: Pull processed data
         run: dvc pull data/processed/train.parquet data/processed/val.parquet data/processed/test.parquet
