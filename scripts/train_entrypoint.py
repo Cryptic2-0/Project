@@ -19,10 +19,16 @@ def _run(cmd: list[str], **kwargs: object) -> None:
 def main() -> None:
     os.chdir(CODE_DIR)
 
-    _run([sys.executable, "-m", "pip", "install", "-e", ".", "--quiet"])
+    _run([sys.executable, "-m", "pip", "install", "-e", "."])
     # Force-upgrade transformers: SageMaker PyTorch 2.2 image ships ~4.38;
     # Trainer.tokenizer= works everywhere, but mlflow.transformers needs >=4.40.
-    _run([sys.executable, "-m", "pip", "install", "transformers>=4.46", "--quiet", "--upgrade"])
+    _run([sys.executable, "-m", "pip", "install", "transformers>=4.46", "--upgrade"])
+
+    # Belt-and-suspenders: editable install may not update sys.path in the
+    # already-running process, so insert src/ explicitly before the import.
+    src_dir = str(CODE_DIR / "src")
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
 
     # DVC requires an SCM root (git repo) unless core.no_scm is set. Source
     # bundle ships only .dvc/config, no .git -- init an empty repo to satisfy it.
