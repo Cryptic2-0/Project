@@ -67,8 +67,11 @@ curl -X POST http://localhost:8000/predict \
 
 | Model | Accuracy | Macro F1 | ROC-AUC | p50 CPU (ms) | Size |
 |-------|----------|----------|---------|--------------|------|
-| TF-IDF + LR | ~0.89 | ~0.89 | ~0.96 | <5 ms | 18 MB |
-| DistilBERT ONNX-INT8 | ~0.92 | ~0.92 | ~0.98 | see [benchmarks](docs/benchmarks.md) | ~65 MB |
+| TF-IDF + LR | 0.904 | 0.904 | 0.967 | <5 ms | 18 MB |
+| DistilBERT FP32 ONNX | — | — | — | 14.1 ms | 256 MB |
+| DistilBERT INT8 ONNX | — | — | — | 6.8 ms (2.1× speedup) | 64 MB |
+
+Accuracy for DistilBERT will populate after SageMaker fine-tuning completes. See [docs/benchmarks.md](docs/benchmarks.md) for full latency numbers.
 
 See [docs/benchmarks.md](docs/benchmarks.md) for full latency numbers.
 
