@@ -4,6 +4,8 @@ data/interim/
 data/processed/
 models/distilbert/
 models/distilbert-checkpoints/
+models/distilbert_onnx/
+models/distilbert_onnx_int8/
 mlruns/
 mlflow.db
 *.egg-info/
@@ -12,3 +14,7 @@ __pycache__/
 .git/
 *.log
 logs/
+docs/drift_reports/
+notebooks/
+metrics/confusion_matrix.png
+data/production/
