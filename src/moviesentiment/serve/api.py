@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import random
+import subprocess
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from moviesentiment.config import settings
+from moviesentiment.monitor.prometheus import (
+    model_version_info,
+    prediction_class_total,
+    prediction_confidence,
+)
 from moviesentiment.serve.inference import InferenceEngine
 from moviesentiment.serve.schemas import HealthResponse, PredictRequest, PredictResponse
 
@@ -21,6 +29,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global engine
     try:
         engine = InferenceEngine.from_registry(settings.model_name, settings.model_stage)
+        sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+        model_version_info.labels(
+            model_name=settings.model_name,
+            version="onnx-int8",
+            git_sha=sha,
+        ).set(1)
     except Exception as exc:
         import logging
 
@@ -64,15 +78,45 @@ def predict(req: PredictRequest) -> PredictResponse:
     for t in req.texts:
         if len(t) > settings.max_text_length:
             raise HTTPException(status_code=422, detail="text exceeds max length")
-    return PredictResponse(predictions=engine.predict(req.texts))
+
+    resp = PredictResponse(predictions=engine.predict(req.texts))
+
+    for p in resp.predictions:
+        prediction_confidence.observe(p.confidence)
+        prediction_class_total.labels(label=p.label).inc()
+
+    if random.random() < 0.1:
+        _log_production(req.texts, resp)
+
+    return resp
 
 
 @app.get("/version", tags=["ops"])
 def version() -> dict[str, str]:
-    import subprocess
-
     sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
     return {"model_name": settings.model_name, "model_stage": settings.model_stage, "git_sha": sha}
+
+
+def _log_production(texts: list[str], resp: PredictResponse) -> None:
+    import pandas as pd
+
+    prod_dir = settings.data_dir / "production"
+    prod_dir.mkdir(parents=True, exist_ok=True)
+    records = [
+        {
+            "text": t,
+            "label": p.label,
+            "confidence": p.confidence,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        for t, p in zip(texts, resp.predictions, strict=False)
+    ]
+    df = pd.DataFrame(records)
+    path = prod_dir / "recent.parquet"
+    if path.exists():
+        existing = pd.read_parquet(path)
+        df = pd.concat([existing, df], ignore_index=True)
+    df.to_parquet(path, index=False)
 
 
 Instrumentator().instrument(app).expose(app)
