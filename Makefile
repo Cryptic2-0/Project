@@ -1,4 +1,4 @@
-.PHONY: install install-dev train export-onnx serve test lint fmt type-check ci-local docker-up clean
+.PHONY: install install-dev train export-onnx serve test lint fmt type-check ci-local docker-up smoke-test clean
 
 install:
 	uv pip install -e .
@@ -33,6 +33,14 @@ type-check:
 	mypy src
 
 ci-local: lint type-check test
+
+# Hit the live ECS Fargate endpoint. Resolves the current task's public IP, then curls /predict.
+smoke-test:
+	@TASK_ARN=$$(aws ecs list-tasks --cluster moviesentiment --service-name moviesentiment --region ap-southeast-2 --query 'taskArns[0]' --output text); \
+	 ENI=$$(aws ecs describe-tasks --cluster moviesentiment --tasks "$$TASK_ARN" --region ap-southeast-2 --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text); \
+	 IP=$$(aws ec2 describe-network-interfaces --network-interface-ids "$$ENI" --region ap-southeast-2 --query 'NetworkInterfaces[0].Association.PublicIp' --output text); \
+	 echo "Live URL: http://$$IP:8000"; \
+	 curl -s -X POST "http://$$IP:8000/predict" -H "Content-Type: application/json" -d '{"texts":["A masterpiece.","Worst film I have seen."]}'
 
 clean:
 	find . -type f -name "*.pyc" -delete

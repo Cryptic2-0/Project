@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 import subprocess
 from collections.abc import AsyncGenerator
@@ -21,6 +22,19 @@ from moviesentiment.monitor.prometheus import (
 from moviesentiment.serve.inference import InferenceEngine
 from moviesentiment.serve.schemas import HealthResponse, PredictRequest, PredictResponse
 
+
+def _git_sha() -> str:
+    """Return git SHA: env var (set at image build), or git command, or 'unknown'."""
+    if env_sha := os.environ.get("GIT_SHA"):
+        return env_sha
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown"
+
+
 engine: InferenceEngine | None = None
 
 
@@ -29,11 +43,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global engine
     try:
         engine = InferenceEngine.from_registry(settings.model_name, settings.model_stage)
-        sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
         model_version_info.labels(
             model_name=settings.model_name,
             version="onnx-int8",
-            git_sha=sha,
+            git_sha=_git_sha(),
         ).set(1)
     except Exception as exc:
         import logging
@@ -93,8 +106,11 @@ def predict(req: PredictRequest) -> PredictResponse:
 
 @app.get("/version", tags=["ops"])
 def version() -> dict[str, str]:
-    sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
-    return {"model_name": settings.model_name, "model_stage": settings.model_stage, "git_sha": sha}
+    return {
+        "model_name": settings.model_name,
+        "model_stage": settings.model_stage,
+        "git_sha": _git_sha(),
+    }
 
 
 def _log_production(texts: list[str], resp: PredictResponse) -> None:

@@ -20,6 +20,8 @@ COPY src/ ./src/
 COPY models/distilbert_onnx_int8/ ./models/distilbert_onnx_int8/
 COPY models/distilbert_onnx/ ./models/distilbert_onnx/
 
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
 USER app
 ENV PYTHONPATH=/app/src
 ENV PORT=8000

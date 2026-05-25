@@ -2,43 +2,69 @@
 
 > End-to-end MLOps sentiment analysis for IMDb reviews. Scrape → train → serve → monitor → retrain.
 
-[![CI](https://github.com/Cryptic2-0/moviesentiment/actions/workflows/ci.yml/badge.svg)](https://github.com/Cryptic2-0/moviesentiment/actions/workflows/ci.yml)
+[![CI](https://github.com/Cryptic2-0/Project/actions/workflows/ci.yml/badge.svg)](https://github.com/Cryptic2-0/Project/actions/workflows/ci.yml)
 
-**Live demo:** `curl -X POST https://moviesentiment.fly.dev/predict -H "Content-Type: application/json" -d '{"texts":["A masterpiece of modern cinema."]}'`
+**Live demo** (deployed on AWS ECS Fargate, `ap-southeast-2`):
+
+```bash
+curl -X POST http://54.206.111.36:8000/predict \
+     -H "Content-Type: application/json" \
+     -d '{"texts":["A masterpiece of modern cinema.","Worst film I have ever seen."]}'
+```
+
+> Public IP rotates when the Fargate task restarts. Check `gh issues` or the latest commit for the current URL, or run `make smoke-test` locally.
 
 ---
 
 ## Architecture
 
-```
-IMDb / HuggingFace dataset
-         │ scrape (weekly GH Actions cron)
-         ▼
-  raw Parquet (DVC-tracked, S3)
-         │ clean + split
-         ▼
-  processed/ (train / val / test)
-         │ train
-    ┌────┴─────────────────┐
-    ▼                      ▼
-TF-IDF + LR          DistilBERT FT
-    └────┬─────────────────┘
-         │ log + register
-         ▼
-  MLflow Tracking + Model Registry
-         │ export → ONNX INT8
-         ▼
-  FastAPI + uvicorn (Dockerized)
-         │ deploy
-         ▼
-  Fly.io (1 shared CPU, 512 MB)
-         │
-    ┌────┴───────────────┐
-    ▼                    ▼
-Prometheus           Evidently
-    │                    │ drift_share > 0.3
-    ▼                    ▼
-Grafana         trigger retrain (GH Actions)
+```mermaid
+flowchart TB
+    subgraph "Data"
+        IMDB["IMDb / HuggingFace<br/>dataset"]
+        S3[("S3<br/>DVC remote")]
+        PROC["processed/<br/>train · val · test"]
+    end
+
+    subgraph "Training"
+        SM["SageMaker<br/>DistilBERT FT"]
+        LR["TF-IDF + LR<br/>baseline"]
+        MLF[("MLflow<br/>Tracking + Registry")]
+        ONNX["ONNX export<br/>+ INT8 quantize"]
+    end
+
+    subgraph "Serving (AWS)"
+        ECR[("ECR<br/>Docker registry")]
+        ECS["ECS Fargate<br/>0.25 vCPU · 1 GB"]
+        API["FastAPI + uvicorn<br/>:8000"]
+    end
+
+    subgraph "CI/CD"
+        GHA["GitHub Actions"]
+    end
+
+    subgraph "Monitoring"
+        PROM[("Prometheus")]
+        GRAF["Grafana"]
+        EVID["Evidently<br/>drift report"]
+    end
+
+    IMDB -->|scrape weekly| S3
+    S3 -->|clean + split| PROC
+    PROC --> LR
+    PROC --> SM
+    LR --> MLF
+    SM --> MLF
+    MLF -->|promote staged| ONNX
+    ONNX --> ECR
+    GHA -->|build + push| ECR
+    ECR --> ECS
+    ECS --> API
+    API -->|/metrics| PROM
+    PROM --> GRAF
+    API -->|prod log sample| EVID
+    EVID -->|drift_share > 0.3| GHA
+    GHA -->|train.yml workflow| SM
 ```
 
 ---
@@ -46,7 +72,7 @@ Grafana         trigger retrain (GH Actions)
 ## Quickstart
 
 ```bash
-git clone https://github.com/Cryptic2-0/moviesentiment
+git clone https://github.com/Cryptic2-0/Project moviesentiment
 cd moviesentiment
 pip install uv
 uv pip install -e ".[dev]"
@@ -103,9 +129,10 @@ moviesentiment drift   # compares prod logs vs training distribution → HTML re
 
 ## CI/CD
 
-- **`ci.yml`**: lint (ruff + black), type-check (mypy), test (pytest ≥70% coverage), Docker build → GHCR push
-- **`train.yml`**: weekly retrain cron + `workflow_dispatch`; promotes model if F1 improves ≥0.5%
-- **`scrape.yml`**: weekly data refresh via HuggingFace dataset
+- **`ci.yml`**: lint (ruff + black), type-check (mypy), test (pytest, coverage gate 55%), Docker build → push to **GHCR + AWS ECR** → `aws ecs update-service --force-new-deployment` rolls Fargate to new image.
+- **`train.yml`**: weekly retrain cron + `workflow_dispatch`; promotes model if F1 improves ≥0.5%.
+- **`scrape.yml`**: weekly data refresh via HuggingFace dataset.
+- **`drift.yml`**: weekly Evidently drift report; triggers `train.yml` if `drift_share > 0.3`.
 
 ---
 
