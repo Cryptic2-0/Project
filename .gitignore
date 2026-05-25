@@ -64,3 +64,9 @@ skills-lock.json
 
 # SageMaker run logs
 sagemaker_run*.log
+
+# Session activity logs (written by .claude/log_session.ps1 hook)
+/logs/
+
+# Local-only Claude Code settings (hooks, personal overrides)
+.claude/settings.local.json

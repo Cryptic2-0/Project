@@ -33,6 +33,7 @@ def main() -> None:
             "pip",
             "install",
             "transformers>=4.46,<5.0",
+            "accelerate>=0.26.0",
             "datasets>=2.18",
             "mlflow>=2.11",
             "dvc[s3]>=3.48",
