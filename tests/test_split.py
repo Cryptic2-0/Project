@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+
 from moviesentiment.data.split import split_dataset
 
 # ---------------------------------------------------------------------------

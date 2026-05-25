@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+
 from moviesentiment.data.clean import _clean_text, clean_reviews
 
 # ---------------------------------------------------------------------------
