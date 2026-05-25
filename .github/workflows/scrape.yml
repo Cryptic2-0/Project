@@ -10,12 +10,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install uv
-      - run: uv pip install --system -e .
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install deps
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Configure DVC S3 credentials
+        run: |
+          dvc remote modify --local myremote access_key_id "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          dvc remote modify --local myremote secret_access_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+
       - name: Scrape reviews
         run: python -m moviesentiment.cli scrape
-      - name: Push data to DVC remote
-        run: dvc push data/raw
+
+      - name: Push raw data to DVC remote
+        run: dvc push data/raw/reviews.parquet
+
+      - name: Commit updated DVC pointer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/raw.dvc dvc.lock || true
+          git diff --cached --quiet || git commit -m "chore(data): refresh raw reviews [skip ci]"
+          git push || true
