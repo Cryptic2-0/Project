@@ -83,6 +83,14 @@ disable_error_code = ["misc"]  # FastAPI/Typer decorators are untyped
 module = ["tests.*", "conftest"]
 disable_error_code = ["misc"]  # pytest fixtures use untyped decorators
 
+[[tool.mypy.overrides]]
+module = [
+    "moviesentiment.serve.inference",
+    "moviesentiment.models.onnx_export",
+    "moviesentiment.models.transformer",
+]
+disable_error_code = ["no-untyped-call"]  # transformers AutoTokenizer.from_pretrained lacks stubs
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

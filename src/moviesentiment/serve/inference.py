@@ -57,8 +57,9 @@ class InferenceEngine:
         probs: np.ndarray[Any, np.dtype[np.float32]] = exp / exp.sum(axis=-1, keepdims=True)
 
         results: list[Prediction] = []
-        for text, prob_row in zip(texts, probs, strict=False):
-            label_id = int(prob_row.argmax())
-            confidence = float(prob_row[label_id])
+        for i, text in enumerate(texts):
+            row = probs[i]
+            label_id = int(row.argmax())
+            confidence = float(row[label_id])
             results.append(Prediction(text=text, label=_LABELS[label_id], confidence=confidence))
         return results
