@@ -1,4 +1,4 @@
-.PHONY: install install-dev train serve test lint fmt type-check ci-local clean
+.PHONY: install install-dev train export-onnx serve test lint fmt type-check ci-local docker-up clean
 
 install:
 	uv pip install -e .
@@ -8,6 +8,12 @@ install-dev:
 
 train:
 	dvc repro
+
+export-onnx:
+	python -m moviesentiment.models.onnx_export
+
+docker-up:
+	docker compose -f deploy/docker-compose.yml up --build
 
 serve:
 	uvicorn moviesentiment.serve.api:app --host 0.0.0.0 --port 8000 --reload

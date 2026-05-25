@@ -100,5 +100,13 @@ def drift(
     typer.echo(f"Drift report: {result}")
 
 
+@app.command()
+def export_onnx() -> None:
+    """Export DistilBERT to ONNX (FP32 + INT8) and benchmark latency."""
+    from moviesentiment.models.onnx_export import main as _export
+
+    _export()
+
+
 if __name__ == "__main__":
     app()

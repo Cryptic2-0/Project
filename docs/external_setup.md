@@ -43,7 +43,7 @@ manual one-time steps. Check each item off as you complete it.
   .\.venv\Scripts\dvc.exe push
   ```
 
-- [ ] **Install Docker Desktop** (needed Week 2, Day 10 — install now so it
+- [x] **Install Docker Desktop** (needed Week 2, Day 10 — install now so it
   finishes updating in the background)
   ```powershell
   winget install Docker.DockerDesktop
@@ -53,13 +53,49 @@ manual one-time steps. Check each item off as you complete it.
 
 ## Week 2 (Days 6–10)
 
-- [ ] **GPU access for DistilBERT fine-tuning**
-  There is no local GPU on this machine. Options (pick one):
-  - **Google Colab free tier** — upload `src/` + `data/processed/`, run
-    `transformer.py`, download `models/` back.
-  - **Kaggle Notebooks** — free T4 GPU, 30 h/week.
-  - **GitHub Codespaces with GPU** (paid, ~$0.36/h for T4).
-  The training script is already wired to detect CUDA automatically.
+- [ ] **GPU training — SageMaker Training Job (ml.g4dn.xlarge T4, ~$0.30)**
+  Artifacts land directly in S3. No browser babysitting, no manual zip download.
+
+  **One-time IAM setup (manual):**
+  1. AWS Console → IAM → Roles → Create role
+  2. Trusted entity: **AWS service → SageMaker**
+  3. Attach policy: `AmazonSageMakerFullAccess`
+  4. Add inline policy (S3 access for DVC remote):
+     ```json
+     {
+       "Effect": "Allow",
+       "Action": "s3:*",
+       "Resource": [
+         "arn:aws:s3:::moviesentiment-dvc-soumya",
+         "arn:aws:s3:::moviesentiment-dvc-soumya/*"
+       ]
+     }
+     ```
+  5. Copy the role ARN (format: `arn:aws:iam::<account-id>:role/<role-name>`)
+
+  **Submit training job:**
+  ```powershell
+  pip install sagemaker   # one-time; or: pip install -e ".[train]"
+  $env:SAGEMAKER_ROLE_ARN = "arn:aws:iam::<account-id>:role/<role-name>"
+  python scripts/sagemaker_launch.py
+  ```
+  Logs stream live. ~25 min. Final line prints the S3 artifact path.
+
+  **After job completes:**
+  ```powershell
+  # Copy the S3 path printed by sagemaker_launch.py, then:
+  $S3_PATH = "s3://moviesentiment-dvc-soumya/sagemaker-output/<job-name>/output/model.tar.gz"
+  aws s3 cp $S3_PATH distilbert_artifacts.tar.gz
+  tar -xzf distilbert_artifacts.tar.gz
+  Move-Item distilbert models\distilbert -Force
+  New-Item -ItemType Directory -Force metrics | Out-Null
+  Move-Item transformer.json metrics\transformer.json -Force
+  .venv\Scripts\dvc.exe add models\distilbert
+  .venv\Scripts\dvc.exe push
+  git add models\distilbert.dvc metrics\transformer.json dvc.lock
+  git commit -m "feat(day6): distilbert fine-tuning artifacts"
+  git push
+  ```
 
 - [ ] **Verify Docker Desktop is running** after install, then test:
   ```powershell
@@ -93,13 +129,19 @@ manual one-time steps. Check each item off as you complete it.
      New repository secret.
   3. Name: `FLY_API_TOKEN`, Value: the token from step 1.
 
-- [ ] **Add DVC remote credentials to GitHub Secrets** (so CI can `dvc pull`)
-  Depends on your remote choice:
-  - GDrive: export `GDRIVE_CREDENTIALS_DATA` (JSON from OAuth flow).
-  - Local path: not usable in CI — switch to GDrive or an S3-compatible
-    store before CI setup.
-  Secret name: `DVC_GDRIVE_CREDENTIALS_DATA` (or whatever the dvc remote
-  modifier expects).
+- [ ] **Add DVC remote credentials (AWS S3) to GitHub Secrets**
+  DVC remote is S3 (`moviesentiment-dvc-soumya`, `ap-southeast-2`).
+  CI needs the same IAM keys to `dvc pull`.
+  1. GitHub repo → Settings → Secrets and variables → Actions.
+  2. Add two secrets:
+     - `AWS_ACCESS_KEY_ID` — your IAM key ID
+     - `AWS_SECRET_ACCESS_KEY` — your IAM secret key
+  3. In the CI workflow add:
+     ```yaml
+     env:
+       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+     ```
 
 - [ ] **Grafana Cloud free tier** (optional — screenshots in README is fine)
   https://grafana.com/auth/sign-up
@@ -159,11 +201,11 @@ manual one-time steps. Check each item off as you complete it.
 | Push local commits | done | Now |
 | DVC remote configured | done | Now |
 | DVC pipeline run locally | done | Week 1 |
-| Docker Desktop installed | pending | Week 1 |
-| GPU access (Colab / Kaggle) | pending | Week 2 |
+| Docker Desktop installed | done | Week 1 |
+| GPU training (SageMaker ml.g4dn.xlarge) | pending | Week 2 |
 | Fly.io account + flyctl | pending | Week 3 |
 | FLY_API_TOKEN in GitHub Secrets | pending | Week 3 |
-| DVC credentials in GitHub Secrets | pending | Week 3 |
+| DVC credentials in GitHub Secrets (S3/AWS) | pending | Week 3 |
 | Grafana Cloud (optional) | pending | Week 3 |
 | Loom account | pending | Week 4 |
 | Excalidraw diagram | pending | Week 4 |
