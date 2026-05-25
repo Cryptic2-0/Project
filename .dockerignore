@@ -1,8 +1,9 @@
 data/
 notebooks/
-models/*.bin
-models/*.pt
+models/distilbert/
+models/distilbert-checkpoints/
 .git/
+.dvc/
 .venv/
 venv/
 __pycache__/
@@ -10,6 +11,12 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
 mlruns/
 mlflow.db
 *.log
+logs/
+docs/
+tests/
+scripts/
+deploy/

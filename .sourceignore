@@ -1,0 +1,14 @@
+.venv/
+data/raw/
+data/interim/
+data/processed/
+models/distilbert/
+models/distilbert-checkpoints/
+mlruns/
+mlflow.db
+*.egg-info/
+__pycache__/
+.ipynb_checkpoints/
+.git/
+*.log
+logs/
