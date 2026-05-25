@@ -1,0 +1,90 @@
+name: drift-detection
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # Every Monday 03:00 UTC (after retrain at 02:00)
+  workflow_dispatch:
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      should_retrain: ${{ steps.check.outputs.should_retrain }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache uv deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-drift-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install deps
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Configure DVC S3 credentials
+        run: |
+          dvc remote modify --local myremote access_key_id "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          dvc remote modify --local myremote secret_access_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+
+      - name: Pull reference data
+        run: dvc pull data/processed/train.parquet
+
+      - name: Pull production logs
+        run: dvc pull data/production/recent.parquet || echo "No production data yet — skipping drift check"
+
+      - name: Run drift detection
+        id: check
+        run: |
+          python - <<'EOF'
+          import sys
+          from pathlib import Path
+          import os
+
+          ref = Path("data/processed/train.parquet")
+          cur = Path("data/production/recent.parquet")
+
+          if not cur.exists():
+              print("No production data — skipping drift check")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("should_retrain=false\n")
+              sys.exit(0)
+
+          from moviesentiment.monitor.drift import drift_share, run_drift_report
+
+          share = drift_share(ref, cur)
+          print(f"Drift share: {share:.3f}")
+
+          out_dir = Path("docs/drift_reports")
+          report_path = run_drift_report(ref, cur, out_dir)
+          print(f"Report: {report_path}")
+
+          threshold = 0.3
+          retrain = share > threshold
+          print(f"should_retrain={'true' if retrain else 'false'} (threshold={threshold})")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"should_retrain={'true' if retrain else 'false'}\n")
+          EOF
+
+      - name: Commit drift report
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/drift_reports/ || true
+          git diff --cached --quiet || git commit -m "chore(drift): add report $(date +%F) [skip ci]"
+          git push || true
+
+  retrain:
+    needs: detect
+    if: needs.detect.outputs.should_retrain == 'true'
+    uses: ./.github/workflows/train.yml
+    secrets: inherit

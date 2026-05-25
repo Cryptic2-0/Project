@@ -1,6 +1,13 @@
 name: deploy
 
 on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "GHCR image tag to deploy (default: latest)"
+        default: "latest"
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       image_tag:

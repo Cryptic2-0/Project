@@ -1,6 +1,12 @@
 name: weekly-retrain
 
 on:
+  workflow_call:
+    inputs:
+      force_promote:
+        description: "Promote even if improvement < threshold"
+        type: boolean
+        default: false
   schedule:
     - cron: "0 2 * * 1"   # Every Monday 02:00 UTC
   workflow_dispatch:
@@ -41,7 +47,7 @@ jobs:
           dvc remote modify --local myremote secret_access_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
       - name: Pull processed data
-        run: dvc pull data/processed
+        run: dvc pull data/processed/train.parquet data/processed/val.parquet data/processed/test.parquet
 
       - name: Train baseline
         run: python -m moviesentiment.cli train baseline
@@ -94,4 +100,5 @@ jobs:
   deploy:
     needs: retrain
     if: needs.retrain.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/ci.yml
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
