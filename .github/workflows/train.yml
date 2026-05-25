@@ -2,29 +2,96 @@ name: weekly-retrain
 
 on:
   schedule:
-    - cron: "0 2 * * 1"  # Every Monday at 02:00 UTC
+    - cron: "0 2 * * 1"   # Every Monday 02:00 UTC
   workflow_dispatch:
+    inputs:
+      force_promote:
+        description: "Promote even if improvement < threshold"
+        type: boolean
+        default: false
 
 jobs:
   retrain:
     runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.eval.outputs.should_deploy }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install uv
-      - run: uv pip install --system -e .
-      - name: Pull data
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache uv deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-retrain-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install deps
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Configure DVC S3 credentials
+        run: |
+          dvc remote modify --local myremote access_key_id "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          dvc remote modify --local myremote secret_access_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+
+      - name: Pull processed data
         run: dvc pull data/processed
+
       - name: Train baseline
         run: python -m moviesentiment.cli train baseline
-      - name: Check if model improved
+
+      - name: Evaluate and check improvement
         id: eval
         run: |
-          python -c "
-          import json, sys
-          new = json.load(open('metrics/baseline.json'))
-          # TODO: compare against current production model
-          print('macro_f1=' + str(new['macro_f1']))
-          "
+          python - <<'EOF'
+          import json, os, sys
+          from pathlib import Path
+
+          new_path = Path("metrics/baseline.json")
+          if not new_path.exists():
+              print("No metrics file — skipping promotion")
+              print("should_deploy=false")
+              sys.exit(0)
+
+          new = json.loads(new_path.read_text())
+          current_f1 = float(os.environ.get("CURRENT_PROD_F1", "0.0"))
+          new_f1 = new.get("macro_f1", 0.0)
+          threshold = 0.005  # 0.5% improvement required
+
+          print(f"New F1: {new_f1:.4f}  |  Current prod F1: {current_f1:.4f}")
+          improved = new_f1 >= current_f1 + threshold
+          force = os.environ.get("FORCE_PROMOTE", "false").lower() == "true"
+
+          if improved or force:
+              print("should_deploy=true")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("should_deploy=true\n")
+          else:
+              print("Model did not improve enough — skipping deploy")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("should_deploy=false\n")
+          EOF
+        env:
+          CURRENT_PROD_F1: ${{ vars.CURRENT_PROD_F1 || '0.0' }}
+          FORCE_PROMOTE: ${{ github.event.inputs.force_promote || 'false' }}
+
+      - name: Push updated metrics
+        if: steps.eval.outputs.should_deploy == 'true'
+        run: |
+          dvc push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add metrics/ dvc.lock
+          git diff --cached --quiet || git commit -m "chore(retrain): update baseline metrics [skip ci]"
+          git push
+
+  deploy:
+    needs: retrain
+    if: needs.retrain.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/ci.yml
