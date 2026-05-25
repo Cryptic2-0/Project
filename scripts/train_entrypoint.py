@@ -19,10 +19,29 @@ def _run(cmd: list[str], **kwargs: object) -> None:
 def main() -> None:
     os.chdir(CODE_DIR)
 
-    _run([sys.executable, "-m", "pip", "install", "-e", "."])
-    # Force-upgrade transformers: SageMaker PyTorch 2.2 image ships ~4.38;
-    # Trainer.tokenizer= works everywhere, but mlflow.transformers needs >=4.40.
-    _run([sys.executable, "-m", "pip", "install", "transformers>=4.46", "--upgrade"])
+    # IMPORTANT: --no-deps so pip does NOT reinstall torch. The SageMaker PyTorch
+    # 2.2 image ships a CUDA-enabled torch; pip would otherwise pull the CPU
+    # wheel from PyPI and break transformers' PyTorch backend detection.
+    _run([sys.executable, "-m", "pip", "install", "-e", ".", "--no-deps"])
+    # Install only runtime deps the base image lacks. transformers gets
+    # explicitly bumped because mlflow.transformers needs >=4.40 and the image
+    # ships ~4.38.
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "transformers>=4.46",
+            "datasets>=2.18",
+            "mlflow>=2.11",
+            "dvc[s3]>=3.48",
+            "pydantic>=2.6",
+            "pydantic-settings>=2.2",
+            "pyyaml",
+            "--upgrade",
+        ]
+    )
 
     # Belt-and-suspenders: editable install may not update sys.path in the
     # already-running process, so insert src/ explicitly before the import.
