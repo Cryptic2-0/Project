@@ -1,0 +1,6 @@
+outs:
+- md5: 514a5847149704f827bee9f53e522234.dir
+  size: 268782909
+  nfiles: 7
+  hash: md5
+  path: distilbert
