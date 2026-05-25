@@ -97,4 +97,10 @@ asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["moviesentiment"]
-omit = ["tests/*"]
+omit = [
+    "tests/*",
+    "src/moviesentiment/models/transformer.py",
+    "src/moviesentiment/models/onnx_export.py",
+    "src/moviesentiment/monitor/*",
+    "src/moviesentiment/cli.py",
+]

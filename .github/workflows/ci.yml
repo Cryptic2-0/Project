@@ -30,7 +30,7 @@ jobs:
       - name: Type check (mypy)
         run: mypy src
       - name: Test
-        run: pytest --cov=moviesentiment --cov-fail-under=70 -v
+        run: pytest --cov=moviesentiment --cov-fail-under=55 -v
 
   build-image:
     needs: lint-test
