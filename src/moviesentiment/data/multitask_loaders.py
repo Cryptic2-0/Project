@@ -90,17 +90,22 @@ def load_emotion(out: Path | None = None) -> Path:
     return out_path
 
 
-def load_spoiler(csv_path: Path, out: Path | None = None) -> Path:
-    """Reshape Kaggle IMDB Spoiler Dataset CSV into (text, label)."""
+def load_spoiler(input_path: Path, out: Path | None = None) -> Path:
+    """Reshape Kaggle IMDB Spoiler Dataset (JSONL or CSV) into (text, label)."""
     import pandas as pd
 
     out_path = out or _OUT_DIR / "spoiler.parquet"
-    df = pd.read_csv(csv_path)
+    suffix = input_path.suffix.lower()
+    if suffix == ".json":
+        # File is JSONL: one record per line.
+        df = pd.read_json(input_path, lines=True)
+    else:
+        df = pd.read_csv(input_path)
     cols = {c.lower(): c for c in df.columns}
     text_col = cols.get("review_text") or cols.get("text")
     spoiler_col = cols.get("is_spoiler") or cols.get("spoiler")
     if text_col is None or spoiler_col is None:
-        raise ValueError(f"Spoiler CSV missing text/spoiler columns; got {list(df.columns)}")
+        raise ValueError(f"Spoiler input missing text/spoiler columns; got {list(df.columns)}")
     out_df = pd.DataFrame(
         {
             "text": df[text_col].astype(str),
