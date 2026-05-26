@@ -26,6 +26,44 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+def test_multitask_engine_from_s3_downloads_expected_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """from_s3 should pull every required tokenizer file and the model.onnx."""
+    from moviesentiment.serve import multitask_inference as mi
+
+    monkeypatch.setattr(mi.settings, "model_dir", tmp_path)
+
+    pulled: list[tuple[str, str, str]] = []
+
+    class _FakeS3:
+        def download_file(self, bucket: str, key: str, local: str) -> None:
+            pulled.append((bucket, key, local))
+            Path(local).write_bytes(b"\x00")
+
+    class _FakeBoto:
+        @staticmethod
+        def client(name: str) -> _FakeS3:
+            assert name == "s3"
+            return _FakeS3()
+
+    monkeypatch.setattr(mi, "boto3", _FakeBoto, raising=False)
+    monkeypatch.setitem(__import__("sys").modules, "boto3", _FakeBoto)
+
+    # Make construction succeed without onnxruntime: stub cls.__init__.
+    def _fake_init(self: object, onnx_path: Path, tokenizer_path: Path) -> None:
+        self._session = None  # type: ignore[attr-defined]
+        self._tokenizer = None  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(mi.MultiTaskInferenceEngine, "__init__", _fake_init)
+
+    mi.MultiTaskInferenceEngine.from_s3("bkt", "multitask_onnx")
+    keys = [k for _, k, _ in pulled]
+    assert "multitask_onnx/model.onnx" in keys
+    assert "multitask_onnx/tokenizer.json" in keys
+    assert "multitask_onnx/vocab.txt" in keys
+
+
 def test_analyze_returns_503_without_multitask_model(client: TestClient) -> None:
     r = client.post("/analyze", json={"text": "A wonderful film."})
     assert r.status_code == 503

@@ -55,6 +55,31 @@ class MultiTaskInferenceEngine:
             )
 
     @classmethod
+    def from_s3(cls, bucket: str, prefix: str) -> MultiTaskInferenceEngine:
+        """Download the multi-task artefact from S3 to settings.model_dir,
+        then construct as usual. Used at Fargate boot when the image does
+        not bundle the v2 ONNX.
+        """
+        import boto3
+
+        d = settings.model_dir / _MULTITASK_DIR
+        d.mkdir(parents=True, exist_ok=True)
+        s3 = boto3.client("s3")
+        wanted = (
+            "model.onnx",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "vocab.txt",
+        )
+        for name in wanted:
+            local = d / name
+            if local.exists():
+                continue
+            s3.download_file(bucket, f"{prefix.rstrip('/')}/{name}", str(local))
+        return cls(d / "model.onnx", d)
+
+    @classmethod
     def from_disk(cls) -> MultiTaskInferenceEngine:
         d = settings.model_dir / _MULTITASK_DIR
         onnx_path = d / "model.onnx"

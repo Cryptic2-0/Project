@@ -115,7 +115,9 @@ def train_multitask() -> None:
         from transformers import DataCollatorWithPadding
 
         pad = DataCollatorWithPadding(tokenizer)
-        # Pull label columns out before padding (collator only knows input_ids).
+        # Pull label columns out before padding; collator only knows input_ids.
+        # Explicit dtypes — datasets serialises NaN as None which torch.tensor
+        # cannot type-infer (Could not infer dtype of NoneType).
         label_cols = (
             "labels_sentiment",
             "labels_emotion",
@@ -123,7 +125,27 @@ def train_multitask() -> None:
             "labels_aspect",
             "labels_helpfulness",
         )
-        labels = {c: torch.tensor([b[c] for b in batch]) for c in label_cols}
+
+        def _to_float(v: Any) -> float:
+            return float("nan") if v is None else float(v)
+
+        labels = {
+            "labels_sentiment": torch.tensor(
+                [int(b["labels_sentiment"]) for b in batch], dtype=torch.long
+            ),
+            "labels_emotion": torch.tensor(
+                [int(b["labels_emotion"]) for b in batch], dtype=torch.long
+            ),
+            "labels_spoiler": torch.tensor(
+                [int(b["labels_spoiler"]) for b in batch], dtype=torch.long
+            ),
+            "labels_aspect": torch.tensor(
+                [[int(x) for x in b["labels_aspect"]] for b in batch], dtype=torch.long
+            ),
+            "labels_helpfulness": torch.tensor(
+                [_to_float(b["labels_helpfulness"]) for b in batch], dtype=torch.float32
+            ),
+        }
         text_batch = [{k: v for k, v in b.items() if k not in label_cols} for b in batch]
         out = pad(text_batch)
         out.update(labels)

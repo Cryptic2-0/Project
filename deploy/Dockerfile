@@ -21,6 +21,10 @@ COPY frontend/ ./frontend/
 # ONNX models only (not raw HF weights or checkpoints)
 COPY models/distilbert_onnx_int8/ ./models/distilbert_onnx_int8/
 COPY models/distilbert_onnx/ ./models/distilbert_onnx/
+# v2 multi-task ONNX is NOT bundled in the image. The serving lifespan
+# downloads it from S3 (s3://${MS_DVC_BUCKET}/multitask_onnx/) on first boot
+# when MS_MULTITASK_S3_PREFIX is set. Keeps image size flat at v1 levels and
+# lets the v2 artefact roll independently of the container.
 
 ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}

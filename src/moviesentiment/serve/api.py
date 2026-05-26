@@ -76,9 +76,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # v2 multi-task model is optional; /analyze returns 503 when absent so the
     # v1 deployment path keeps working without the new artefact.
+    # Preference order: local disk -> S3 bootstrap (MS_DVC_BUCKET +
+    # MS_MULTITASK_S3_PREFIX). The S3 path lets Fargate pull the artefact on
+    # boot without bundling it into the image.
     try:
-        multitask_engine = MultiTaskInferenceEngine.from_disk()
-        log.info("multitask_model_loaded")
+        bucket = os.environ.get("MS_DVC_BUCKET")
+        prefix = os.environ.get("MS_MULTITASK_S3_PREFIX")
+        if bucket and prefix:
+            multitask_engine = MultiTaskInferenceEngine.from_s3(bucket, prefix)
+            log.info("multitask_model_loaded_from_s3", bucket=bucket, prefix=prefix)
+        else:
+            multitask_engine = MultiTaskInferenceEngine.from_disk()
+            log.info("multitask_model_loaded")
     except Exception as exc:
         log.info("multitask_model_unavailable", reason=str(exc))
     yield

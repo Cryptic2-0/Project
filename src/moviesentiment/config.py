@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # takeover. Default empty = main; set MS_HF_REVISION in CI to the resolved commit.
     hf_revision: str = ""
 
-    model_config = {"env_prefix": "MS_", "env_file": ".env"}
+    model_config = {"env_prefix": "MS_", "env_file": ".env", "extra": "ignore"}
 
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
