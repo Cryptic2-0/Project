@@ -63,7 +63,7 @@ def split(
 
 @app.command()
 def train(
-    model: str = typer.Argument(..., help="baseline | transformer"),
+    model: str = typer.Argument(..., help="baseline | transformer | multitask"),
 ) -> None:
     """Train a model and log to MLflow."""
     if model == "baseline":
@@ -74,9 +74,24 @@ def train(
         from moviesentiment.models.transformer import train_transformer
 
         train_transformer()
+    elif model == "multitask":
+        from moviesentiment.models.multitask_train import train_multitask
+
+        train_multitask()
     else:
         typer.echo(f"Unknown model: {model}", err=True)
         raise typer.Exit(1)
+
+
+@app.command(name="insights-batch")
+def insights_batch(
+    out: Path = typer.Option(Path("data/production/insights"), help="Output dir"),
+) -> None:
+    """Materialise per-movie insights JSON over the reservoir sample."""
+    from moviesentiment.serve.insights import materialise_all
+
+    n = materialise_all(out)
+    typer.echo(f"Wrote insights for {n} movie(s) -> {out}")
 
 
 @app.command()

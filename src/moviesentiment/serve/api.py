@@ -23,12 +23,17 @@ from moviesentiment.monitor.prometheus import (
     prediction_confidence,
 )
 from moviesentiment.serve.inference import InferenceEngine
+from moviesentiment.serve.insights import compute_insights
 from moviesentiment.serve.logging_setup import bind_request_id, configure_logging, log
+from moviesentiment.serve.multitask_inference import MultiTaskInferenceEngine
 from moviesentiment.serve.reservoir import ReservoirSampler
 from moviesentiment.serve.schemas import (
+    AnalyzeRequest,
+    AnalyzeResponse,
     ExplainRequest,
     ExplainResponse,
     HealthResponse,
+    InsightsResponse,
     PredictRequest,
     PredictResponse,
     TokenAttribution,
@@ -49,6 +54,7 @@ def _git_sha() -> str:
 
 
 engine: InferenceEngine | None = None
+multitask_engine: MultiTaskInferenceEngine | None = None
 sampler = ReservoirSampler(k=1000)
 limiter = Limiter(key_func=get_remote_address)
 
@@ -56,7 +62,7 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     configure_logging()
-    global engine
+    global engine, multitask_engine
     try:
         engine = InferenceEngine.from_registry(settings.model_name, settings.model_stage)
         model_version_info.labels(
@@ -67,6 +73,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("model_loaded", model=settings.model_name, stage=settings.model_stage)
     except Exception as exc:
         log.warning("model_load_failed", error=str(exc))
+
+    # v2 multi-task model is optional; /analyze returns 503 when absent so the
+    # v1 deployment path keeps working without the new artefact.
+    try:
+        multitask_engine = MultiTaskInferenceEngine.from_disk()
+        log.info("multitask_model_loaded")
+    except Exception as exc:
+        log.info("multitask_model_unavailable", reason=str(exc))
     yield
 
 
@@ -190,6 +204,30 @@ def version() -> dict[str, str]:
 def sample_state() -> JSONResponse:
     """Return reservoir-sampler stats (size, seen, flushed). For debugging only."""
     return JSONResponse(sampler.stats())
+
+
+@app.post("/analyze", response_model=AnalyzeResponse, tags=["inference"])
+@limiter.limit("30/minute")
+def analyze(request: Request, req: AnalyzeRequest) -> AnalyzeResponse:
+    """v2 multi-task analyse: sentiment + ABSA + emotion + spoiler + helpfulness.
+
+    Returns 503 until the multi-task ONNX artefact is trained and bundled. See
+    docs/future_improvements.md for the training plan.
+    """
+    if multitask_engine is None:
+        raise HTTPException(status_code=503, detail="multitask model not loaded")
+    if len(req.text) > settings.max_text_length:
+        raise HTTPException(status_code=422, detail="text exceeds max length")
+    return multitask_engine.analyze(req.text)
+
+
+@app.get("/insights/{movie_id}", response_model=InsightsResponse, tags=["inference"])
+def insights(movie_id: str) -> InsightsResponse:
+    """Aggregated per-movie review intelligence over the production reservoir."""
+    result = compute_insights(movie_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="no data for that movie yet")
+    return result
 
 
 Instrumentator().instrument(app).expose(app)

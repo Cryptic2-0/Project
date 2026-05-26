@@ -71,7 +71,25 @@ If the budget allows one of these and you can only ship one before an interview 
 
 ## v2 — Review Intelligence (multi-task expansion)
 
-**Status**: deferred · ~3 day effort · ~$0.24 one-time + $0/mo · interview value 5/5
+**Status**: code skeleton landed (commit on `main`); training run pending · ~$0.24 one-time + $0/mo · interview value 5/5
+
+**What is in the repo now**
+- `src/moviesentiment/models/multitask.py` — shared-encoder DistilBERT with five heads.
+- `src/moviesentiment/models/multitask_train.py` — joint trainer with task-weighted loss; missing labels per row use sentinel ignore values so each parquet only needs to supervise the task it cares about.
+- `src/moviesentiment/data/multitask_loaders.py` — loaders for GoEmotions → Ekman, Kaggle spoiler CSV, helpfulness proxy, and ABSA distillation from `yangheng/deberta-v3-base-absa-v1.1`.
+- `src/moviesentiment/serve/multitask_inference.py` — multi-head ONNX wrapper.
+- `src/moviesentiment/serve/insights.py` + `GET /insights/{movie_id}` — aggregates the reservoir, falls back gracefully when the v1 reservoir schema is in use.
+- `POST /analyze` — wired into the FastAPI app; 503s until the ONNX artefact lands.
+- `params.yaml::multitask.*` — full hyperparameter block.
+- Tests: `tests/test_multitask.py` covers schema round-trip, 503 fallback, 422 oversize, and the v1↔v2 insights migration path.
+
+**What still needs to happen**
+1. Run the data loaders to produce per-task parquets under `data/interim/multitask/`.
+2. `moviesentiment train multitask` on SageMaker spot (estimated ~1.5 hr on `ml.g4dn.xlarge`).
+3. Export the trained checkpoint to ONNX with five named outputs (`sentiment`, `aspect`, `emotion`, `spoiler`, `helpfulness`) and DVC-track it as `models/distilbert_multitask_onnx/`.
+4. Add a `train_multitask` DVC stage and a CI step to fetch the new artefact.
+5. Extend the production reservoir schema to capture per-head outputs (so `/insights` aggregates v2 columns).
+6. Optional: hourly Lambda materialising `data/production/insights/*.json` to S3.
 
 Pivot the service from "positive vs negative" to a **multi-head review-intelligence API** that no free / portfolio-tier service currently offers in one call. Shared DistilBERT encoder → five linear heads, one forward pass.
 

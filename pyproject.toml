@@ -117,6 +117,18 @@ module = [
 ]
 disable_error_code = ["no-untyped-call"]  # transformers AutoTokenizer.from_pretrained lacks stubs
 
+[[tool.mypy.overrides]]
+# v2 multi-task: heavy torch / transformers / datasets surfaces that mostly
+# resolve to Any under ignore_missing_imports. Tests cover schema + API
+# behaviour; training code runs offline on GPU.
+module = [
+    "moviesentiment.models.multitask",
+    "moviesentiment.models.multitask_train",
+    "moviesentiment.serve.multitask_inference",
+    "moviesentiment.data.multitask_loaders",
+]
+disable_error_code = ["misc", "no-any-return", "no-untyped-call", "assignment"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
@@ -139,6 +151,12 @@ omit = [
     "src/moviesentiment/models/onnx_export.py",
     "src/moviesentiment/models/baseline.py",
     "src/moviesentiment/models/registry.py",
+    # v2 multi-task: needs GPU + labelled datasets to exercise.
+    "src/moviesentiment/models/multitask.py",
+    "src/moviesentiment/models/multitask_train.py",
+    "src/moviesentiment/data/multitask_loaders.py",
+    # Needs the multi-task ONNX artefact on disk; covered by integration tests.
+    "src/moviesentiment/serve/multitask_inference.py",
     "src/moviesentiment/monitor/perf_estimate.py",
     "src/moviesentiment/eval/metrics.py",
     "src/moviesentiment/serve/tracing.py",
