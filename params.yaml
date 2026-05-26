@@ -32,3 +32,8 @@ transformer:
   warmup_ratio: 0.1
   weight_decay: 0.01
   max_length: 512
+  # LoRA: enabled for drift-retraining loop. Set false for the initial full fine-tune.
+  use_lora: false
+  lora_r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05

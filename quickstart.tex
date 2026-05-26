@@ -1,0 +1,566 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codecomment}{HTML}{5C6B73}
+\definecolor{codekey}{HTML}{0F4C75}
+\definecolor{codestr}{HTML}{B8336A}
+
+\lstdefinestyle{shell}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize,
+  commentstyle=\color{codecomment},
+  keywordstyle=\color{codekey}\bfseries,
+  stringstyle=\color{codestr},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  framesep=4pt,
+  framerule=0pt,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  language=bash
+}
+\lstset{style=shell}
+
+\title{\textbf{MovieSentiment --- Quickstart}\\[2pt]
+       \large How to Open and Run the Project from Scratch}
+\author{Soumya Sarkar}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent This guide is written for somebody who has just cloned the repository and
+wants to get the project running on their own machine, end to end, without prior
+context. It assumes the reader is comfortable with a command line but not
+necessarily with MLOps tooling. Every step lists the prerequisite, the exact
+command to type, and what should happen if the step succeeds. By the end of the
+guide a reader will have the API running locally on
+\texttt{http://localhost:8000}, will have served a real prediction from an INT8
+ONNX model, and will know where to look when something breaks.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ----------------------------------------------------------------------------
+\section{What Are You Actually Running?}
+% ----------------------------------------------------------------------------
+
+MovieSentiment classifies IMDb-style movie reviews as positive or negative. The
+fast path through the project is:
+
+\begin{enumerate}[leftmargin=*]
+\item Install Python and the project's dependencies.
+\item Pull the pre-trained ONNX model files (so you do not need a GPU).
+\item Start the FastAPI service.
+\item Send it some text.
+\end{enumerate}
+
+\noindent That is the five-minute version. The remainder of this document walks
+through each step slowly, then covers Docker, running the full training pipeline
+yourself, executing tests, and deploying to AWS.
+
+% ----------------------------------------------------------------------------
+\section{Prerequisites}
+% ----------------------------------------------------------------------------
+
+\subsection{Required Software}
+
+\begin{longtable}{@{}lp{0.30\linewidth}p{0.4\linewidth}@{}}
+\toprule
+\textbf{Tool} & \textbf{Minimum version} & \textbf{Why you need it} \\ \midrule \endhead
+Python   & 3.10 (3.11 recommended)        & The language the project is written in. \\
+Git      & any modern version             & To clone the repository. \\
+pip      & ships with Python              & Bootstraps everything else. \\
+uv       & latest                         & A fast pip replacement; installed with pip. \\
+Docker   & 20.10 or later (optional)      & For the local Prometheus + Grafana stack. \\
+DVC      & 3.48 or later (optional)       & For pulling the pre-trained model files
+                                            from S3. \\
+AWS CLI  & latest (optional)              & Only needed if you plan to deploy or pull
+                                            DVC artefacts from the project's S3 remote. \\
+\bottomrule
+\end{longtable}
+
+\subsection{How to Check What You Have}
+
+\begin{lstlisting}
+python --version
+git --version
+docker --version            # only if you plan to use the docker-compose stack
+\end{lstlisting}
+
+\noindent If \texttt{python} maps to Python 2 on your machine, use \texttt{python3}
+in every command below.
+
+\subsection{Installing the Missing Pieces}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Python}: download from \texttt{https://www.python.org/downloads/} (Windows,
+      macOS, Linux) or use your distribution's package manager.
+\item \textbf{Git}: \texttt{https://git-scm.com/downloads}.
+\item \textbf{Docker Desktop} (optional): \texttt{https://www.docker.com/products/docker-desktop/}.
+\end{itemize}
+
+% ----------------------------------------------------------------------------
+\section{Step 1 --- Clone the Repository}
+% ----------------------------------------------------------------------------
+
+\begin{lstlisting}
+git clone https://github.com/Cryptic2-0/Project moviesentiment
+cd moviesentiment
+\end{lstlisting}
+
+\noindent The working tree now looks like this:
+
+\begin{lstlisting}
+moviesentiment/
+  src/moviesentiment/      # the installable package
+  tests/                   # pytest suite
+  deploy/                  # Dockerfile, ECS task, Lambda handler, compose
+  scripts/                 # SageMaker, Locust, lock-file scripts
+  frontend/                # the single-page demo UI
+  docs/                    # this file, model card, datasheet, benchmarks
+  dvc.yaml                 # the pipeline graph
+  params.yaml              # hyperparameters
+  pyproject.toml           # dependencies
+  Makefile                 # day-to-day shortcuts
+\end{lstlisting}
+
+% ----------------------------------------------------------------------------
+\section{Step 2 --- Create a Virtual Environment}
+% ----------------------------------------------------------------------------
+
+The virtual environment isolates the project's Python packages from your system
+Python, so nothing you install for this project leaks into other work.
+
+\subsection{macOS / Linux}
+
+\begin{lstlisting}
+python -m venv .venv
+source .venv/bin/activate
+\end{lstlisting}
+
+\subsection{Windows (PowerShell)}
+
+\begin{lstlisting}
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+\end{lstlisting}
+
+\noindent After this command your shell prompt should be prefixed with
+\texttt{(.venv)}.
+
+% ----------------------------------------------------------------------------
+\section{Step 3 --- Install Dependencies}
+% ----------------------------------------------------------------------------
+
+The project uses \texttt{uv} for installs because it is dramatically faster than
+plain \texttt{pip} on a large dependency tree. Bootstrap it once:
+
+\begin{lstlisting}
+pip install uv
+\end{lstlisting}
+
+\noindent Then install the project in editable mode with the development extras:
+
+\begin{lstlisting}
+uv pip install -e ".[dev]"
+\end{lstlisting}
+
+\noindent What ``editable mode'' means: edits you make under \texttt{src/} take
+effect immediately, without re-installing. The \texttt{[dev]} extra adds
+ruff, black, mypy, pytest, hypothesis, locust, pre-commit, bandit, and pip-audit.
+
+\subsection{Optional Extras}
+
+\begin{longtable}{@{}lp{0.6\linewidth}@{}}
+\toprule
+\textbf{Extra} & \textbf{What it adds} \\ \midrule \endhead
+\texttt{train}   & SageMaker SDK, boto3, peft, accelerate. Needed only if you
+                   plan to fine-tune the transformer yourself. \\
+\texttt{explain} & captum, for gradient-based interpretability experiments. \\
+\texttt{monitor} & nannyml, great-expectations, for production performance
+                   estimation. \\
+\bottomrule
+\end{longtable}
+
+\noindent Install any extra with:
+
+\begin{lstlisting}
+uv pip install -e ".[dev,train]"
+\end{lstlisting}
+
+% ----------------------------------------------------------------------------
+\section{Step 4 --- Obtain the Model Files}
+% ----------------------------------------------------------------------------
+
+The repository tracks the ONNX model artefacts with DVC, not Git. You have three
+ways to get them:
+
+\subsection{Option A --- Pull from the Project's S3 Remote (Recommended)}
+
+\textbf{Prerequisite:} AWS credentials with read access to the DVC bucket. If you
+were given keys, set them in your shell first:
+
+\begin{lstlisting}
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+# Windows PowerShell:
+# $env:AWS_ACCESS_KEY_ID = "AKIA..."
+# $env:AWS_SECRET_ACCESS_KEY = "..."
+
+dvc pull models/distilbert_onnx_int8.dvc models/distilbert_onnx.dvc
+\end{lstlisting}
+
+\noindent After the pull you should see
+\texttt{models/distilbert\_onnx\_int8/model.onnx} (about 64\,MB) and
+\texttt{models/distilbert\_onnx/model.onnx} (about 256\,MB).
+
+\subsection{Option B --- Export the ONNX Files Yourself}
+
+If you have no S3 access but do have time, let the project download a base
+DistilBERT from HuggingFace and export it locally:
+
+\begin{lstlisting}
+python -m moviesentiment.models.onnx_export
+# or: make export-onnx
+\end{lstlisting}
+
+\noindent The script will print \texttt{models/distilbert/ not found --- exporting
+base distilbert-base-uncased} and produce both FP32 and INT8 versions, plus the
+benchmark report at \texttt{docs/benchmarks.md}. The base model is \emph{not}
+fine-tuned, so accuracy on actual reviews will be poor; this option is for
+verifying that the serving path works.
+
+\subsection{Option C --- Train the Model from Scratch}
+
+See the section ``Running the Training Pipeline'' further down. This requires
+either a GPU on your laptop or a SageMaker account.
+
+% ----------------------------------------------------------------------------
+\section{Step 5 --- Start the API Locally}
+% ----------------------------------------------------------------------------
+
+With the model in place, start the FastAPI service:
+
+\begin{lstlisting}
+make serve
+# equivalent to:
+# uvicorn moviesentiment.serve.api:app --host 0.0.0.0 --port 8000 --reload
+\end{lstlisting}
+
+\noindent You should see structured-JSON log lines, including one with
+\texttt{"event": "model\_loaded"}. The service is listening on port 8000.
+
+\subsection{Useful URLs}
+
+\begin{longtable}{@{}lp{0.6\linewidth}@{}}
+\toprule
+\textbf{URL} & \textbf{What it shows} \\ \midrule \endhead
+\texttt{http://localhost:8000/docs}        & Auto-generated Swagger UI -- try every endpoint here. \\
+\texttt{http://localhost:8000/healthz}     & Always returns \texttt{\{"status":"ok"\}} once running. \\
+\texttt{http://localhost:8000/readyz}      & 200 once the model is loaded, 503 otherwise. \\
+\texttt{http://localhost:8000/version}     & Model name, stage, and the git SHA. \\
+\texttt{http://localhost:8000/metrics}     & Prometheus exposition. \\
+\texttt{http://localhost:8000/ui/}         & The static demo frontend (if bundled). \\
+\bottomrule
+\end{longtable}
+
+% ----------------------------------------------------------------------------
+\section{Step 6 --- Send Your First Prediction}
+% ----------------------------------------------------------------------------
+
+In a second terminal, with the server still running:
+
+\begin{lstlisting}
+curl -X POST http://localhost:8000/predict \
+     -H "Content-Type: application/json" \
+     -d '{"texts": ["A complete masterpiece.",
+                    "Two hours I will never get back."]}'
+\end{lstlisting}
+
+\noindent The response will look like:
+
+\begin{lstlisting}
+{
+  "predictions": [
+    {"text": "A complete masterpiece.",
+     "label": "positive",
+     "confidence": 0.987},
+    {"text": "Two hours I will never get back.",
+     "label": "negative",
+     "confidence": 0.962}
+  ]
+}
+\end{lstlisting}
+
+\subsection{Try the Explainer}
+
+\begin{lstlisting}
+curl -X POST http://localhost:8000/explain \
+     -H "Content-Type: application/json" \
+     -d '{"text":"The film was breathtakingly beautiful.","top_k":5}'
+\end{lstlisting}
+
+\noindent You will receive the top-5 tokens ranked by how much they supported the
+predicted label, computed by dropping each token in turn and measuring the change
+in confidence.
+
+\subsection{Limits to Be Aware Of}
+
+\begin{itemize}[leftmargin=*]
+\item \texttt{POST /predict} accepts at most 32 texts per request.
+\item Each text must be at most 5000 characters long.
+\item \texttt{POST /predict} is rate-limited to 60 requests per minute per IP.
+\item \texttt{POST /explain} is rate-limited to 10 requests per minute per IP.
+\end{itemize}
+
+% ----------------------------------------------------------------------------
+\section{Configuration via Environment Variables}
+% ----------------------------------------------------------------------------
+
+Every tuneable setting is read by the Pydantic \texttt{Settings} class in
+\texttt{src/moviesentiment/config.py}. The variables all use the prefix
+\texttt{MS\_}; you can either export them in your shell or write them into a
+\texttt{.env} file at the repository root.
+
+\begin{longtable}{@{}lp{0.32\linewidth}p{0.34\linewidth}@{}}
+\toprule
+\textbf{Variable} & \textbf{Default} & \textbf{Effect} \\ \midrule \endhead
+\texttt{MS\_MAX\_TEXT\_LENGTH}      & 5000          & Per-text character cap. \\
+\texttt{MS\_MAX\_BATCH\_SIZE}       & 32            & Per-request batch cap. \\
+\texttt{MS\_CORS\_ALLOW\_ORIGINS}   & \texttt{*}    & Comma-separated CORS allowlist;
+                                                     an explicit list auto-enables
+                                                     credentials. \\
+\texttt{MS\_HF\_REVISION}           & empty         & Pin a HuggingFace commit SHA;
+                                                     empty means \texttt{main}
+                                                     (dev only). \\
+\texttt{MS\_MLFLOW\_TRACKING\_URI}  & \texttt{sqlite:///mlflow.db} & Where MLflow
+                                                                    writes runs. \\
+\texttt{MS\_MODEL\_NAME}            & \texttt{moviesentiment-classifier} & Registry name. \\
+\texttt{MS\_MODEL\_STAGE}           & \texttt{Production} & Which stage to load. \\
+\texttt{OTEL\_EXPORTER\_OTLP\_ENDPOINT} & unset    & Set to enable distributed tracing. \\
+\texttt{MS\_SQS\_QUEUE\_URL}, \texttt{MS\_JOBS\_TABLE} & unset & Required for the
+                                                                async path; without
+                                                                them \texttt{/predict/async}
+                                                                returns 503. \\
+\bottomrule
+\end{longtable}
+
+% ----------------------------------------------------------------------------
+\section{Running the Local Observability Stack}
+% ----------------------------------------------------------------------------
+
+If you have Docker installed, \texttt{deploy/docker-compose.yml} brings up the API
+plus Prometheus and Grafana with the dashboard pre-provisioned.
+
+\begin{lstlisting}
+docker compose -f deploy/docker-compose.yml up --build
+# or:
+make docker-up
+\end{lstlisting}
+
+\noindent After the stack is up:
+
+\begin{longtable}{@{}lp{0.5\linewidth}@{}}
+\toprule
+\textbf{Service} & \textbf{URL} \\ \midrule \endhead
+API        & \texttt{http://localhost:8000} \\
+Prometheus & \texttt{http://localhost:9090} \\
+Grafana    & \texttt{http://localhost:3000} (anonymous Admin auto-enabled) \\
+\bottomrule
+\end{longtable}
+
+\noindent The Grafana dashboard reads the four custom metrics
+(\texttt{prediction\_confidence}, \texttt{prediction\_class\_total},
+\texttt{model\_version\_info}, \texttt{model\_estimated\_f1}) plus the default
+\texttt{prometheus-fastapi-instrumentator} histograms.
+
+% ----------------------------------------------------------------------------
+\section{Running the Training Pipeline}
+% ----------------------------------------------------------------------------
+
+The full pipeline -- scrape, clean, validate, split, train -- is declared in
+\texttt{dvc.yaml}. To execute everything:
+
+\begin{lstlisting}
+dvc repro
+\end{lstlisting}
+
+\noindent DVC walks the DAG and only re-runs stages whose dependencies changed.
+The first run is the expensive one (downloading 50{,}000 IMDb reviews and fine-tuning
+DistilBERT for three epochs). On a laptop without a GPU the transformer stage will
+take hours; the baseline stage finishes in minutes.
+
+\subsection{Running Individual Stages}
+
+\begin{lstlisting}
+python -m moviesentiment.cli scrape
+python -m moviesentiment.cli clean
+python -m moviesentiment.data.validate \
+       data/interim/clean.parquet metrics/data_quality.json
+python -m moviesentiment.cli split
+python -m moviesentiment.cli train baseline
+python -m moviesentiment.cli train transformer
+\end{lstlisting}
+
+\subsection{Inspecting Results in MLflow}
+
+\begin{lstlisting}
+mlflow ui --backend-store-uri sqlite:///mlflow.db
+# open http://localhost:5000
+\end{lstlisting}
+
+\subsection{Rendering Metric Tables in the Terminal}
+
+\begin{lstlisting}
+python -m moviesentiment.cli metrics
+\end{lstlisting}
+
+\noindent Walks \texttt{metrics/*.json} and prints a Rich-formatted table.
+
+\subsection{Drift Reports}
+
+\begin{lstlisting}
+python -m moviesentiment.cli drift
+# HTML report written to docs/drift_reports/<today>.html
+\end{lstlisting}
+
+% ----------------------------------------------------------------------------
+\section{Running the Tests}
+% ----------------------------------------------------------------------------
+
+\begin{lstlisting}
+make test          # fast tests, coverage gate at 75%
+make test-slow     # ONNX export e2e tests (minutes long)
+\end{lstlisting}
+
+\noindent Behind the scenes \texttt{make test} runs
+\texttt{pytest -m "not slow" --cov=moviesentiment --cov-fail-under=75 -v}. A failing
+coverage gate is a real failure -- it will turn CI red.
+
+\subsection{Linting and Type Checking}
+
+\begin{lstlisting}
+make lint           # ruff + black
+make fmt            # auto-fix the same
+make type-check     # mypy on src and tests
+make pre-commit     # the full pre-commit suite
+make ci-local       # the bundle CI runs: lint + type + test
+\end{lstlisting}
+
+\subsection{The Locust Load Test}
+
+\begin{lstlisting}
+# Terminal 1: keep the API running.
+make serve
+
+# Terminal 2: hammer it for two minutes at 50 concurrent users.
+make loadtest
+# Report at docs/load_test_report.html
+\end{lstlisting}
+
+% ----------------------------------------------------------------------------
+\section{Deploying to AWS (Reference)}
+% ----------------------------------------------------------------------------
+
+This is not required to run the project. It is here so a reader who wants to put
+the service on the public internet knows what the project actually does in CI.
+
+\subsection{One-Time Setup}
+
+\begin{enumerate}[leftmargin=*]
+\item Create an ECR repository in \texttt{ap-southeast-2} named
+      \texttt{moviesentiment}.
+\item Create an ECS cluster called \texttt{moviesentiment} and a service of the
+      same name backed by the task definition in
+      \texttt{deploy/ecs-task-definition.json} (Fargate, ARM64, 0.25 vCPU,
+      1024 MB).
+\item Create an S3 bucket for the DVC remote and grant the IAM user / role
+      read+write.
+\item Store \texttt{AWS\_ACCESS\_KEY\_ID}, \texttt{AWS\_SECRET\_ACCESS\_KEY} as
+      GitHub Actions secrets so \texttt{ci.yml} can pull DVC artefacts and push to
+      ECR.
+\end{enumerate}
+
+\subsection{Pushing a New Build}
+
+Each push to \texttt{main} triggers \texttt{.github/workflows/ci.yml}, which lints,
+tests, builds the ARM64 image with \texttt{GIT\_SHA=\$\{\{ github.sha \}\}}, pushes
+to ECR plus GHCR, and then calls:
+
+\begin{lstlisting}
+aws ecs update-service \
+    --cluster moviesentiment \
+    --service moviesentiment \
+    --force-new-deployment \
+    --region ap-southeast-2
+\end{lstlisting}
+
+\subsection{Smoke-Testing the Live Endpoint}
+
+\begin{lstlisting}
+make smoke-test
+# Resolves the running task's public IP, then curls /predict.
+\end{lstlisting}
+
+\subsection{Monthly Cost}
+
+About \$6/mo for the Fargate task (Graviton ARM, lowest tier). DynamoDB, SQS, and
+Lambda for the async path are inside their free tiers under portfolio traffic.
+
+% ----------------------------------------------------------------------------
+\section{Common Issues}
+% ----------------------------------------------------------------------------
+
+\begin{longtable}{@{}p{0.42\linewidth}p{0.5\linewidth}@{}}
+\toprule
+\textbf{Symptom} & \textbf{What it usually means} \\ \midrule \endhead
+\texttt{/readyz} returns 503 forever. & The ONNX file is not in
+                                        \texttt{models/distilbert\_onnx\_int8/}.
+                                        Pull via DVC or run \texttt{make export-onnx}. \\
+\texttt{/predict} returns 422. & Either the batch exceeds 32 texts or one of the
+                                 texts exceeds 5000 characters. \\
+\texttt{429 Too Many Requests}. & The slowapi rate limit fired. Wait a minute. \\
+\texttt{mlflow ui} shows no runs. & Make sure \texttt{MS\_MLFLOW\_TRACKING\_URI} is
+                                    \texttt{sqlite:///mlflow.db} and that you ran
+                                    training in the same working directory. \\
+\texttt{dvc pull} fails with a 403. & AWS credentials are missing or do not have
+                                      read on the bucket. \\
+Docker compose hangs on the API. & First build downloads the model layer; expect
+                                   a one-time slow build. \\
+\texttt{pytest} reports coverage failure. & You have probably touched a serving
+                                            module without updating its tests --
+                                            coverage gate is 75\%. \\
+\bottomrule
+\end{longtable}
+
+% ----------------------------------------------------------------------------
+\section{Where to Look Next}
+% ----------------------------------------------------------------------------
+
+\begin{itemize}[leftmargin=*]
+\item \texttt{workflow.tex} -- the companion document; explains \emph{what} the
+      project does end to end and why each component exists.
+\item \texttt{docs/model\_card.md} -- intended use, per-slice F1, fairness notes,
+      environmental impact estimate.
+\item \texttt{docs/datasheet.md} -- the IMDb 50K dataset provenance and bias notes.
+\item \texttt{docs/benchmarks.md} -- raw FP32 vs INT8 latency numbers.
+\item \texttt{docs/loadtest.md} -- Locust reference numbers, bottleneck breakdown.
+\item \texttt{docs/grafana\_cloud\_setup.md} -- one-time OTLP export setup.
+\item \texttt{docs/future\_improvements.md} -- deferred items and their pickup plans.
+\item \texttt{SECURITY.md} -- threat model, mitigations, accepted residual risks.
+\end{itemize}
+
+\end{document}

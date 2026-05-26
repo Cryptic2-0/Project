@@ -9,7 +9,7 @@ description = "End-to-end MLOps sentiment analysis for IMDb reviews"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    "fastapi>=0.110",
+    "fastapi>=0.136.3",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
@@ -17,7 +17,9 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=15",
     "joblib>=1.3",
-    "transformers>=4.38",
+    # transformers 5.x removes optimum-onnx compat; PYSEC-2025-217 has no compatible fix
+    # yet and is exploitable only via untrusted model loading (we pin revision in code).
+    "transformers>=4.57.6,<4.58",
     "torch>=2.2",
     "datasets>=2.18",
     "optimum[onnxruntime]>=1.17",
@@ -30,12 +32,31 @@ dependencies = [
     "httpx>=0.27",
     "beautifulsoup4>=4.12",
     "requests>=2.31",
+    "structlog>=24.1",
+    "slowapi>=0.1.9",
+    "rich>=13.7",
+    "opentelemetry-api>=1.24",
+    "opentelemetry-sdk>=1.24",
+    "opentelemetry-instrumentation-fastapi>=0.45b0",
+    "opentelemetry-exporter-otlp>=1.24",
+    # Security-tracked transitive pins (override unsafe versions pulled by ML stack)
+    "setuptools>=78.1.1,<82",
+    "starlette>=0.47.3",
 ]
 
 [project.optional-dependencies]
 train = [
     "sagemaker>=2.210,<3.0",
     "boto3>=1.34",
+    "peft>=0.10",
+    "accelerate>=0.28",
+]
+explain = [
+    "captum>=0.7",
+]
+monitor = [
+    "nannyml>=0.10",
+    "great-expectations>=0.18",
 ]
 dev = [
     "ruff>=0.3",
@@ -44,8 +65,11 @@ dev = [
     "pytest>=8.1",
     "pytest-cov>=4.1",
     "pytest-asyncio>=0.23",
+    "hypothesis>=6.99,<6.130",  # 6.130+ has TreeNode.is_exhausted regression on py3.10
     "locust>=2.24",
     "pre-commit>=3.6",
+    "bandit[toml]>=1.7",
+    "pip-audit>=2.7",
 ]
 
 [project.scripts]
@@ -75,13 +99,15 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "moviesentiment.serve.api",
+    "moviesentiment.serve.async_api",
     "moviesentiment.cli",
 ]
 disable_error_code = ["misc"]  # FastAPI/Typer decorators are untyped
 
 [[tool.mypy.overrides]]
 module = ["tests.*", "conftest"]
-disable_error_code = ["misc"]  # pytest fixtures use untyped decorators
+disable_error_code = ["misc", "no-untyped-def", "no-untyped-call"]
+warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
 module = [
@@ -94,6 +120,16 @@ disable_error_code = ["no-untyped-call"]  # transformers AutoTokenizer.from_pret
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "scripts"]
+# B101 assert ok in tests; B104 0.0.0.0 intentional inside container; B311 random not
+# used for crypto (reservoir sampling); B404/B603/B607 git subprocess uses PATH lookup
+# which is the documented portable behavior.
+skips = ["B101", "B104", "B311", "B404", "B603", "B607"]
 
 [tool.coverage.run]
 source = ["moviesentiment"]
@@ -101,6 +137,10 @@ omit = [
     "tests/*",
     "src/moviesentiment/models/transformer.py",
     "src/moviesentiment/models/onnx_export.py",
-    "src/moviesentiment/monitor/*",
+    "src/moviesentiment/models/baseline.py",
+    "src/moviesentiment/models/registry.py",
+    "src/moviesentiment/monitor/perf_estimate.py",
+    "src/moviesentiment/eval/metrics.py",
+    "src/moviesentiment/serve/tracing.py",
     "src/moviesentiment/cli.py",
 ]

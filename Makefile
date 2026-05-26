@@ -1,4 +1,4 @@
-.PHONY: install install-dev train export-onnx serve test lint fmt type-check ci-local docker-up smoke-test clean
+.PHONY: install install-dev train export-onnx serve test lint fmt type-check ci-local docker-up smoke-test clean drift loadtest perf-estimate validate-data lock pre-commit docs
 
 install:
 	uv pip install -e .
@@ -19,7 +19,31 @@ serve:
 	uvicorn moviesentiment.serve.api:app --host 0.0.0.0 --port 8000 --reload
 
 test:
-	pytest --cov=moviesentiment --cov-fail-under=70 -v
+	pytest -m "not slow" --cov=moviesentiment --cov-fail-under=75 -v
+
+test-slow:
+	pytest -m slow -v
+
+drift:
+	python -m moviesentiment.cli drift
+
+validate-data:
+	python -m moviesentiment.data.validate data/interim/clean.parquet metrics/data_quality.json
+
+perf-estimate:
+	python -m moviesentiment.cli perf-estimate
+
+loadtest:
+	locust -f scripts/load_test.py --host http://localhost:8000 --headless -u 50 -r 5 -t 120s --html docs/load_test_report.html
+
+lock:
+	bash scripts/compile_requirements.sh
+
+pre-commit:
+	pre-commit run --all-files
+
+docs:
+	bash scripts/build_docs.sh
 
 lint:
 	ruff check src tests
@@ -30,7 +54,7 @@ fmt:
 	black src tests
 
 type-check:
-	mypy src
+	mypy src tests
 
 ci-local: lint type-check test
 

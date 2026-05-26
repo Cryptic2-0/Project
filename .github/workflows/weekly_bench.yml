@@ -1,0 +1,52 @@
+name: weekly-benchmark
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"  # Monday 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv + deps
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+
+      - name: Pull ONNX model from DVC
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          uv pip install --system "dvc[s3]"
+          dvc remote modify --local s3remote access_key_id "$AWS_ACCESS_KEY_ID"
+          dvc remote modify --local s3remote secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          dvc pull models/distilbert_onnx_int8.dvc
+
+      - name: Run benchmark
+        run: |
+          python -m moviesentiment.models.onnx_export --benchmark-only > bench.txt 2>&1 || true
+          cat bench.txt
+
+      - name: Run slow tests (ONNX export e2e)
+        run: pytest -m slow -v tests/test_onnx_export.py || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ github.run_id }}
+          path: |
+            bench.txt
+            docs/benchmarks.md
+          retention-days: 30

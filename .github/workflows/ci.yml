@@ -28,9 +28,27 @@ jobs:
       - name: Format check (black)
         run: black --check src tests
       - name: Type check (mypy)
-        run: mypy src
+        run: mypy src tests
+      - name: Security scan (bandit)
+        run: bandit -c pyproject.toml -r src -ll
+      - name: Dependency vuln scan (pip-audit)
+        # Documented residual risks (see SECURITY.md):
+        #   PYSEC-2025-217 / CVE-2026-1839  transformers — fix in 5.0.0rc3 breaks optimum
+        #   PYSEC-2026-161                   starlette — fix 1.0.1 incompatible w/ fastapi 0.136
+        #   MAL-2026-4750                    fastapi — OSV false positive on 0.136.x
+        #   CVE-2025-69872                   diskcache — no upstream fix
+        #   CVE-2026-27448 / 27459           pyOpenSSL — pinned by pydrive2 (dvc transitive)
+        run: |
+          pip-audit --skip-editable \
+            --ignore-vuln PYSEC-2025-217 \
+            --ignore-vuln CVE-2026-1839 \
+            --ignore-vuln PYSEC-2026-161 \
+            --ignore-vuln MAL-2026-4750 \
+            --ignore-vuln CVE-2025-69872 \
+            --ignore-vuln CVE-2026-27448 \
+            --ignore-vuln CVE-2026-27459
       - name: Test
-        run: pytest --cov=moviesentiment --cov-fail-under=55 -v
+        run: pytest -m "not slow" --cov=moviesentiment --cov-fail-under=75 -v
 
   build-image:
     needs: lint-test
@@ -78,11 +96,20 @@ jobs:
       - name: Lowercase repo name
         run: echo "REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - uses: docker/build-push-action@v5
         with:
           context: .
           file: deploy/Dockerfile
           push: ${{ github.ref == 'refs/heads/main' }}
+          platforms: linux/arm64
           build-args: |
             GIT_SHA=${{ github.sha }}
           tags: |

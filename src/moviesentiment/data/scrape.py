@@ -39,8 +39,13 @@ def _load_hf(out_path: Path) -> int:
     """Download stanfordnlp/imdb and write Parquet with canonical schema."""
     from datasets import load_dataset
 
-    _LOG.info("Downloading stanfordnlp/imdb from HuggingFace …")
-    dataset: Any = load_dataset("stanfordnlp/imdb")
+    # Pin dataset revision via MS_HF_REVISION to defend against namespace takeover.
+    # Empty default = main; CI / training jobs should set this to a concrete commit.
+    from moviesentiment.config import settings as _settings
+
+    rev = _settings.hf_revision or None
+    _LOG.info("Downloading stanfordnlp/imdb from HuggingFace (revision=%s) …", rev or "main")
+    dataset: Any = load_dataset("stanfordnlp/imdb", revision=rev)
     scraped_at = datetime.now(timezone.utc).isoformat()
     records: list[dict[str, Any]] = []
 

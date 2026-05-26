@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import os
-import random
 import subprocess
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from moviesentiment.config import settings
 from moviesentiment.monitor.prometheus import (
@@ -20,7 +23,17 @@ from moviesentiment.monitor.prometheus import (
     prediction_confidence,
 )
 from moviesentiment.serve.inference import InferenceEngine
-from moviesentiment.serve.schemas import HealthResponse, PredictRequest, PredictResponse
+from moviesentiment.serve.logging_setup import bind_request_id, configure_logging, log
+from moviesentiment.serve.reservoir import ReservoirSampler
+from moviesentiment.serve.schemas import (
+    ExplainRequest,
+    ExplainResponse,
+    HealthResponse,
+    PredictRequest,
+    PredictResponse,
+    TokenAttribution,
+)
+from moviesentiment.serve.tracing import setup_tracing
 
 
 def _git_sha() -> str:
@@ -36,10 +49,13 @@ def _git_sha() -> str:
 
 
 engine: InferenceEngine | None = None
+sampler = ReservoirSampler(k=1000)
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    configure_logging()
     global engine
     try:
         engine = InferenceEngine.from_registry(settings.model_name, settings.model_stage)
@@ -48,10 +64,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             version="onnx-int8",
             git_sha=_git_sha(),
         ).set(1)
+        log.info("model_loaded", model=settings.model_name, stage=settings.model_stage)
     except Exception as exc:
-        import logging
-
-        logging.warning(f"Model not loaded at startup: {exc}")
+        log.warning("model_load_failed", error=str(exc))
     yield
 
 
@@ -62,12 +77,29 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+_origins = settings.cors_origins_list()
+# Wildcard + credentials is rejected by browsers; only set allow_credentials when the
+# allowlist is explicit. Default config is no-credentials wildcard for the public demo.
+_allow_credentials = bool(_origins) and "*" not in _origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-Request-ID"],
+    allow_credentials=_allow_credentials,
+    max_age=600,
 )
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+    rid = bind_request_id(request.headers.get("x-request-id"))
+    response = await call_next(request)
+    response.headers["x-request-id"] = rid
+    return response
 
 
 @app.get("/healthz", response_model=HealthResponse, tags=["ops"])
@@ -83,7 +115,8 @@ def readyz() -> HealthResponse:
 
 
 @app.post("/predict", response_model=PredictResponse, tags=["inference"])
-def predict(req: PredictRequest) -> PredictResponse:
+@limiter.limit("60/minute")
+def predict(request: Request, req: PredictRequest) -> PredictResponse:
     if engine is None:
         raise HTTPException(status_code=503, detail="model not loaded")
     if len(req.texts) > settings.max_batch_size:
@@ -98,10 +131,50 @@ def predict(req: PredictRequest) -> PredictResponse:
         prediction_confidence.observe(p.confidence)
         prediction_class_total.labels(label=p.label).inc()
 
-    if random.random() < 0.1:
-        _log_production(req.texts, resp)
+    # Reservoir sampling: keep a uniform sample of N production inputs at fixed memory.
+    # Replaces an earlier random.random() < 0.1 sample which biased toward early traffic.
+    for text, pred in zip(req.texts, resp.predictions, strict=False):
+        record = {
+            "text": text,
+            "label": pred.label,
+            "confidence": pred.confidence,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        sampler.add(record)
+
+    sampler.maybe_flush(settings.data_dir / "production" / "recent.parquet")
+
+    log.info(
+        "predict_complete",
+        n=len(req.texts),
+        labels=[p.label for p in resp.predictions],
+    )
 
     return resp
+
+
+@app.post("/explain", response_model=ExplainResponse, tags=["inference"])
+@limiter.limit("10/minute")
+def explain(request: Request, req: ExplainRequest) -> ExplainResponse:
+    """Per-token attribution for a single review via occlusion (drop-one-token).
+
+    Opt-in interpretability surface — costs ~K× the latency of /predict where K is the
+    token count. Kept separate so the hot /predict path stays cheap.
+    """
+    if engine is None:
+        raise HTTPException(status_code=503, detail="model not loaded")
+    if len(req.text) > settings.max_text_length:
+        raise HTTPException(status_code=422, detail="text exceeds max length")
+
+    from moviesentiment.serve.explain import occlusion_attribution
+
+    base, attrs = occlusion_attribution(engine, req.text, top_k=req.top_k)
+    return ExplainResponse(
+        text=req.text,
+        label=base.label,
+        confidence=base.confidence,
+        attributions=[TokenAttribution(token=t, attribution=a) for t, a in attrs],
+    )
 
 
 @app.get("/version", tags=["ops"])
@@ -113,26 +186,26 @@ def version() -> dict[str, str]:
     }
 
 
-def _log_production(texts: list[str], resp: PredictResponse) -> None:
-    import pandas as pd
-
-    prod_dir = settings.data_dir / "production"
-    prod_dir.mkdir(parents=True, exist_ok=True)
-    records = [
-        {
-            "text": t,
-            "label": p.label,
-            "confidence": p.confidence,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        for t, p in zip(texts, resp.predictions, strict=False)
-    ]
-    df = pd.DataFrame(records)
-    path = prod_dir / "recent.parquet"
-    if path.exists():
-        existing = pd.read_parquet(path)
-        df = pd.concat([existing, df], ignore_index=True)
-    df.to_parquet(path, index=False)
+@app.get("/sample", tags=["ops"])
+def sample_state() -> JSONResponse:
+    """Return reservoir-sampler stats (size, seen, flushed). For debugging only."""
+    return JSONResponse(sampler.stats())
 
 
 Instrumentator().instrument(app).expose(app)
+
+setup_tracing(app)
+
+# Async inference endpoints (SQS+Lambda). Returns 503 if MS_SQS_QUEUE_URL+MS_JOBS_TABLE
+# are not set, so local dev works without AWS plumbing.
+from moviesentiment.serve.async_api import async_router  # noqa: E402
+
+app.include_router(async_router)
+
+# Optional: serve the static frontend from the same Fargate task. Mounted last so it
+# doesn't shadow JSON routes. Skipped silently if frontend/index.html isn't bundled.
+_frontend_dir = settings.project_root / "frontend"
+if (_frontend_dir / "index.html").exists():
+    from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+    app.mount("/ui", StaticFiles(directory=_frontend_dir, html=True), name="ui")

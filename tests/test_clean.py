@@ -48,7 +48,7 @@ def _make_parquet(tmp_path: Path, rows: list[dict[str, object]]) -> Path:
     return p
 
 
-@pytest.fixture()  # type: ignore[misc]
+@pytest.fixture()
 def basic_inp(tmp_path: Path) -> Path:
     return _make_parquet(
         tmp_path,

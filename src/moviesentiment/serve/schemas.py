@@ -27,3 +27,20 @@ class PredictResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+
+
+class ExplainRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=5000)
+    top_k: int = Field(default=10, ge=1, le=50)
+
+
+class TokenAttribution(BaseModel):
+    token: str
+    attribution: float
+
+
+class ExplainResponse(BaseModel):
+    text: str
+    label: str
+    confidence: float
+    attributions: list[TokenAttribution]

@@ -16,6 +16,8 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY src/ ./src/
+# Bundle the static UI so /ui serves directly from the Fargate task. Costs ~30 KB.
+COPY frontend/ ./frontend/
 # ONNX models only (not raw HF weights or checkpoints)
 COPY models/distilbert_onnx_int8/ ./models/distilbert_onnx_int8/
 COPY models/distilbert_onnx/ ./models/distilbert_onnx/

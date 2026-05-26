@@ -17,10 +17,20 @@ stages:
     outs:
       - data/interim/clean.parquet
 
+  validate_data:
+    cmd: python -m moviesentiment.data.validate data/interim/clean.parquet metrics/data_quality.json
+    deps:
+      - data/interim/clean.parquet
+      - src/moviesentiment/data/validate.py
+    metrics:
+      - metrics/data_quality.json:
+          cache: false
+
   split:
     cmd: python -m moviesentiment.cli split --inp data/interim/clean.parquet --out-dir data/processed
     deps:
       - data/interim/clean.parquet
+      - metrics/data_quality.json
       - src/moviesentiment/data/split.py
     params:
       - split.test_size

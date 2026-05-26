@@ -1,4 +1,22 @@
+# Line endings
 * text=auto eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+
+# export-ignore: tracked in repo (cloners see them) but excluded from
+# `git archive` output, which is what GitHub uses to build the Source-code
+# tarballs on every Release. Use this for developer-internal docs and
+# workspace material that should not ship with a release.
+MOVIESENTIMENT_BUILD_GUIDE.md export-ignore
+notebooks/                    export-ignore
+docs/progress/                export-ignore
+docs/interview_talking_points.md export-ignore
+.github/                      export-ignore
+.dvcignore                    export-ignore
+.dockerignore                 export-ignore
+.pre-commit-config.yaml       export-ignore
+.gitattributes                export-ignore
+.gitignore                    export-ignore
+scripts/build_docs.ps1        export-ignore
+scripts/build_docs.sh         export-ignore

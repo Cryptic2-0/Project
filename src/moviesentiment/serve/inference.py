@@ -19,7 +19,9 @@ class InferenceEngine:
         from transformers import AutoTokenizer
 
         self._session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
-        self._tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_path))
+        # nosec B615 — tokenizer_path is a local filesystem path (DVC-pulled artifact),
+        # not a HuggingFace Hub identifier. No remote download occurs at serve time.
+        self._tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_path))  # nosec B615
         self._ready = True
 
     @classmethod

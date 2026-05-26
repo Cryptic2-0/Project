@@ -63,6 +63,13 @@ def main() -> None:
         f"Staged source at {stage} ({sum(f.stat().st_size for f in stage.rglob('*') if f.is_file()) // 1024} KB)"
     )
 
+    # Spot training: 70-90% cheaper than on-demand. SageMaker pauses + resumes on
+    # interruption. max_wait must be >= max_run; checkpoint_s3_uri stores partial
+    # state. LoRA training (~5 min wall clock) is fast enough that interruption
+    # almost never matters in practice.
+    use_spot = os.environ.get("SAGEMAKER_USE_SPOT", "1") != "0"
+    max_run = 60 * 60  # 1 hour ceiling
+
     estimator = PyTorch(
         entry_point="scripts/train_entrypoint.py",
         source_dir=str(stage),
@@ -74,6 +81,10 @@ def main() -> None:
         output_path=f"s3://{BUCKET}/sagemaker-output/",
         base_job_name="moviesentiment-distilbert",
         sagemaker_session=sm_session,
+        use_spot_instances=use_spot,
+        max_run=max_run,
+        max_wait=max_run * 2 if use_spot else None,
+        checkpoint_s3_uri=(f"s3://{BUCKET}/sagemaker-checkpoints/" if use_spot else None),
     )
 
     print("Submitting training job (~25 min on ml.g4dn.xlarge T4)...")

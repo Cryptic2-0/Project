@@ -61,7 +61,26 @@ logs/
 
 # Claude Code agent workspace
 .agents/
+.claude/
 skills-lock.json
+
+# Test / coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# LaTeX build outputs
+/docs/build/
+*.aux
+*.toc
+*.out
+*.fdb_latexmk
+*.fls
+*.synctex.gz
 
 # SageMaker run logs
 logs/sagemaker/
@@ -71,3 +90,8 @@ logs/sagemaker/
 
 # Local-only Claude Code settings (hooks, personal overrides)
 .claude/settings.local.json
+
+# Local workspace notes (not for repo)
+improvements_done.txt
+possible_improvements.md
+onnx_export.log

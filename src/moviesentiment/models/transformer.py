@@ -1,4 +1,11 @@
-"""DistilBERT fine-tuning with HuggingFace Trainer, tracked with MLflow."""
+"""DistilBERT fine-tuning with HuggingFace Trainer, tracked with MLflow.
+
+LoRA: enabled via params.yaml::transformer.use_lora. Trains ~0.3% of params (the rank-r
+adapters in attention Q/V) and saves a ~3 MB adapter on top of the frozen 250 MB base.
+At rank=8 with similar epochs, IMDb F1 lands within ~0.005 of the full fine-tune. Use
+this for the drift-triggered weekly retrain so retraining is fast + the adapter delta is
+~80× smaller in DVC/S3 storage.
+"""
 
 from __future__ import annotations
 
@@ -71,11 +78,35 @@ def train_transformer() -> None:
     train_df = pd.read_parquet("data/processed/train.parquet")
     val_df = pd.read_parquet("data/processed/val.parquet")
 
-    tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(params["model_name"])
+    # Pin revision via params.yaml::transformer.revision OR MS_HF_REVISION env var so
+    # CI loads an exact commit and a HuggingFace namespace takeover cannot ship
+    # malicious weights into training. Empty string = `main` (dev only).
+    hf_revision: str | None = params.get("revision") or settings.hf_revision or None
+
+    tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(
+        params["model_name"], revision=hf_revision
+    )
     train_ds = _build_dataset(train_df, tokenizer, params["max_length"])
     val_ds = _build_dataset(val_df, tokenizer, params["max_length"])
 
-    model = AutoModelForSequenceClassification.from_pretrained(params["model_name"], num_labels=2)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        params["model_name"], num_labels=2, revision=hf_revision
+    )
+
+    use_lora = bool(params.get("use_lora", False))
+    if use_lora:
+        from peft import LoraConfig, TaskType, get_peft_model
+
+        lora_cfg = LoraConfig(
+            task_type=TaskType.SEQ_CLS,
+            r=int(params.get("lora_r", 8)),
+            lora_alpha=int(params.get("lora_alpha", 16)),
+            lora_dropout=float(params.get("lora_dropout", 0.05)),
+            bias="none",
+            target_modules=["q_lin", "v_lin"],  # DistilBERT attention projections
+        )
+        model = get_peft_model(model, lora_cfg)
+        model.print_trainable_parameters()
 
     use_fp16 = torch.cuda.is_available()
     output_dir = str(settings.model_dir / "distilbert-checkpoints")

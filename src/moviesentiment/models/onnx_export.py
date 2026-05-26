@@ -34,10 +34,14 @@ def export_to_onnx(model_src: str, onnx_dir: Path) -> Path:
     from transformers import AutoTokenizer
 
     onnx_dir.mkdir(parents=True, exist_ok=True)
-    ort_model = ORTModelForSequenceClassification.from_pretrained(model_src, export=True)
+    # model_src is a local fine-tuned checkpoint directory from _find_source(); no
+    # remote HuggingFace fetch occurs here.
+    ort_model = ORTModelForSequenceClassification.from_pretrained(  # nosec B615
+        model_src, export=True
+    )
     ort_model.save_pretrained(str(onnx_dir))
 
-    tokenizer = AutoTokenizer.from_pretrained(model_src)
+    tokenizer = AutoTokenizer.from_pretrained(model_src)  # nosec B615 (local path)
     tokenizer.save_pretrained(str(onnx_dir))
 
     onnx_path = onnx_dir / "model.onnx"
@@ -84,7 +88,7 @@ def benchmark(fp32_path: Path, int8_path: Path, tokenizer_dir: Path) -> dict[str
     import onnxruntime as ort
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir))
+    tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_dir))  # nosec B615 (local path)
     fp32_sess = ort.InferenceSession(str(fp32_path), providers=["CPUExecutionProvider"])
     int8_sess = ort.InferenceSession(str(int8_path), providers=["CPUExecutionProvider"])
 
@@ -112,8 +116,8 @@ Measured on CPU (batch_size=2, max_length=128, n_runs=100).
 
 | Model | p50 (ms) | p95 (ms) | p99 (ms) | Mean (ms) | Size (MB) |
 |-------|----------|----------|----------|-----------|-----------|
-| DistilBERT FP32 ONNX | {fp32['p50_ms']:.1f} | {fp32['p95_ms']:.1f} | {fp32['p99_ms']:.1f} | {fp32['mean_ms']:.1f} | {fp32_mb:.0f} |
-| DistilBERT INT8 ONNX | {int8['p50_ms']:.1f} | {int8['p95_ms']:.1f} | {int8['p99_ms']:.1f} | {int8['mean_ms']:.1f} | {int8_mb:.0f} |
+| DistilBERT FP32 ONNX | {fp32["p50_ms"]:.1f} | {fp32["p95_ms"]:.1f} | {fp32["p99_ms"]:.1f} | {fp32["mean_ms"]:.1f} | {fp32_mb:.0f} |
+| DistilBERT INT8 ONNX | {int8["p50_ms"]:.1f} | {int8["p95_ms"]:.1f} | {int8["p99_ms"]:.1f} | {int8["mean_ms"]:.1f} | {int8_mb:.0f} |
 
 **INT8 speedup: {speedup:.1f}x** at p50 latency.
 
@@ -145,7 +149,7 @@ def main() -> None:
     from transformers import AutoTokenizer
 
     print("[3/4] Copying tokenizer to INT8 dir...")
-    tok = AutoTokenizer.from_pretrained(str(onnx_dir))
+    tok = AutoTokenizer.from_pretrained(str(onnx_dir))  # nosec B615 (local path)
     tok.save_pretrained(str(int8_dir))
 
     print("[4/4] Benchmarking...")

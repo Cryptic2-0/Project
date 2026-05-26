@@ -6,7 +6,7 @@
   "memory": "1024",
   "executionRoleArn": "arn:aws:iam::375259955411:role/ecsTaskExecutionRole",
   "runtimePlatform": {
-    "cpuArchitecture": "X86_64",
+    "cpuArchitecture": "ARM64",
     "operatingSystemFamily": "LINUX"
   },
   "containerDefinitions": [
@@ -22,7 +22,9 @@
         }
       ],
       "environment": [
-        {"name": "PORT", "value": "8000"}
+        {"name": "PORT", "value": "8000"},
+        {"name": "OTEL_SERVICE_NAME", "value": "moviesentiment"},
+        {"name": "MS_ENV", "value": "prod"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

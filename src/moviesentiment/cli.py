@@ -3,8 +3,11 @@
 from pathlib import Path
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
 app = typer.Typer(help="MovieSentiment pipeline CLI")
+_console = Console()
 
 
 @app.command()
@@ -106,6 +109,52 @@ def export_onnx() -> None:
     from moviesentiment.models.onnx_export import main as _export
 
     _export()
+
+
+@app.command()
+def metrics(
+    metrics_dir: Path = typer.Option(Path("metrics"), help="Directory of metric JSON files"),
+) -> None:
+    """Render all metric JSON files as a Rich table."""
+    import json
+
+    table = Table(title="MovieSentiment metrics", show_header=True, header_style="bold")
+    table.add_column("file", style="dim")
+    table.add_column("metric")
+    table.add_column("value", justify="right")
+
+    if not metrics_dir.exists():
+        _console.print(f"[red]No metrics directory at {metrics_dir}[/red]")
+        raise typer.Exit(1)
+
+    for path in sorted(metrics_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        for key, value in data.items() if isinstance(data, dict) else []:
+            table.add_row(
+                path.name, str(key), f"{value:.4f}" if isinstance(value, float) else str(value)
+            )
+
+    _console.print(table)
+
+
+@app.command(name="perf-estimate")
+def perf_estimate(
+    reference: Path = typer.Option(Path("data/production/labeled_reference.parquet")),
+    current: Path = typer.Option(Path("data/production/recent.parquet")),
+) -> None:
+    """Run NannyML CBPE to estimate production F1 without ground truth."""
+    from moviesentiment.monitor.perf_estimate import estimate
+
+    result = estimate(reference, current)
+    table = Table(title="Estimated production performance")
+    table.add_column("metric")
+    table.add_column("value", justify="right")
+    for k, v in result.items():
+        table.add_row(k, f"{v:.4f}")
+    _console.print(table)
 
 
 if __name__ == "__main__":

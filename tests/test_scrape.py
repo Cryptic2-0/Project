@@ -44,7 +44,7 @@ def _mock_post(edges: list[dict[str, object]], has_next: bool = False) -> MagicM
     return mock
 
 
-@pytest.fixture()  # type: ignore[misc]
+@pytest.fixture()
 def tmp_parquet(tmp_path: Path) -> Path:
     return tmp_path / "reviews.parquet"
 

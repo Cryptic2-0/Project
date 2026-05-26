@@ -1,0 +1,1210 @@
+<!doctype html>
+<!--
+  =========================================================================
+  MovieSentiment — v2
+
+  AESTHETIC CHOSEN:  Option A — "Terminal monochrome"
+    base:   zinc-950 (#09090b)         text:    zinc-100 (#f4f4f5)
+    accent: electric green #00ff88 — reserved for LIVE state + POSITIVE
+    neg:    zinc-400 with strikethrough
+    bars:   ASCII blocks  ████████████░░░░░░░░
+    type:   Inter (prose), JetBrains Mono (everything else)
+    rules:  no rounded cards, hairline borders, no gradients, no emoji
+
+  ARCH DIAGRAM:      Animated SVG flow — dots traveling Scrape → Monitor → loop
+
+  THUMBNAILS of the directions I did NOT pick
+  (sketches only — not implemented):
+
+    Option B — "Paper engineering"            Option C — "Telemetry dashboard"
+    ┌────────────────────────────┐            ┌────────────────────────────┐
+    │  MovieSentiment            │            │ ◆ MovieSentiment   [LIVE]  │
+    │  ─────────────────         │            │ ─────────────────────────  │
+    │  F1     0.939              │            │ F1    LAT    SIZE          │
+    │  Lat    6.8 ms             │            │ 0.939 ▁▂▄▆█ 64MB           │
+    │  Size   64 MB              │            │                            │
+    │                            │            │ req/s  ▁▂▁▃▂▄▃▅▄▆▅▇       │
+    │  arXiv-style, ink-blue     │            │ p50ms  ▆▄▅▃▄▂▃▂▁▁▂▁       │
+    │  on warm paper #faf8f3     │            │ drift  ●● cyan/amber       │
+    │  hand-drawn SVG arrows     │            │ Grafana-coded, slate+cyan  │
+    └────────────────────────────┘            └────────────────────────────┘
+  =========================================================================
+-->
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MovieSentiment — IMDb sentiment classifier</title>
+<meta name="description" content="DistilBERT INT8 ONNX served from AWS ECS Fargate. F1 0.939, 6.8 ms p50." />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          ink: { 0: '#09090b', 1: '#0c0c0e', 2: '#111114' },
+          live: '#00ff88',
+        },
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
+
+<style>
+  :root { color-scheme: dark; }
+  html, body { background: #09090b; color: #f4f4f5; }
+  body { font-feature-settings: "ss01", "ss03", "calt", "zero"; }
+
+  /* sharp, terminal-coded — no rounded cards */
+  .panel { border: 1px solid #27272a; background: #0b0b0e; }
+  .panel-hover:hover { border-color: #3f3f46; }
+
+  /* hairline divider with terminal tick marks */
+  .rule { height: 1px; background: #27272a; }
+
+  /* electric green is reserved — only positive + live state */
+  .live { color: #00ff88; }
+  .live-bg { background-color: #00ff88; color: #09090b; }
+  .live-bd { border-color: #00ff8855; }
+  .live-soft { background-color: rgba(0,255,136,0.08); }
+  .live-dot { box-shadow: 0 0 6px #00ff88, 0 0 14px rgba(0,255,136,0.35); }
+
+  /* blink for the "alive" cursor */
+  @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  .cursor { display: inline-block; width: 0.55ch; background: #00ff88; height: 1em; vertical-align: -2px; animation: blink 1.05s steps(1) infinite; }
+
+  /* pulse for live state dots */
+  @keyframes pulseDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .pulse-dot { animation: pulseDot 1.6s ease-in-out infinite; }
+
+  /* fade in for results */
+  .fade-in { animation: fadeIn 240ms ease-out both; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+
+  /* shimmer for skeletons (subtle, mono) */
+  .shimmer { background: linear-gradient(90deg, rgba(63,63,70,0) 0%, rgba(63,63,70,0.55) 50%, rgba(63,63,70,0) 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  /* terminal scanline backdrop — VERY subtle */
+  .scan {
+    background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  }
+
+  /* dotted ascii grid */
+  .ascii-grid {
+    background-image: radial-gradient(rgba(82,82,91,0.35) 1px, transparent 1px);
+    background-size: 12px 12px;
+    mask-image: radial-gradient(ellipse at top, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(ellipse at top, black 30%, transparent 80%);
+  }
+
+  /* asci confidence bar uses pre/mono spacing */
+  .ascii-bar { font-variant-ligatures: none; letter-spacing: 0; }
+
+  /* strikethrough negative sentiment */
+  .neg-strike { text-decoration: line-through; text-decoration-color: #52525b; color: #a1a1aa; }
+
+  /* sparkline pen */
+  .spark { stroke: #d4d4d8; stroke-width: 1.5; fill: none; }
+  .spark-live { stroke: #00ff88; }
+
+  /* SVG arch flow path + dot */
+  .arch-path { stroke: #3f3f46; stroke-width: 1.5; fill: none; }
+  .arch-path-loop { stroke-dasharray: 4 4; }
+  .arch-dot { fill: #00ff88; filter: drop-shadow(0 0 4px rgba(0,255,136,0.7)); }
+  .arch-node text.title { fill: #f4f4f5; font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 600; }
+  .arch-node text.sub   { fill: #71717a; font-family: "JetBrains Mono", monospace; font-size: 10px; }
+  .arch-node rect { fill: #0b0b0e; stroke: #27272a; stroke-width: 1; }
+  .arch-node.live rect { stroke: #00ff8866; }
+  .arch-node.alert rect { stroke: #f59e0b66; }
+
+  /* travelling dot animation along path */
+  @keyframes flow1 { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+  .flow-dot {
+    offset-path: path("M 60 80 H 220 H 380 H 540 H 700 V 200 H 540 H 380 H 220 H 60 V 80");
+    offset-rotate: 0deg;
+    animation: flow1 9s linear infinite;
+    fill: #00ff88;
+    filter: drop-shadow(0 0 5px rgba(0,255,136,0.75));
+  }
+  .flow-dot.d2 { animation-delay: -3s; opacity: 0.6; }
+  .flow-dot.d3 { animation-delay: -6s; opacity: 0.35; }
+
+  /* form niceties */
+  textarea, input, button { font-family: inherit; }
+  textarea::placeholder, input::placeholder { color: #52525b; }
+
+  /* selection */
+  ::selection { background: rgba(0,255,136,0.25); color: #f4f4f5; }
+</style>
+</head>
+<body class="font-sans antialiased min-h-screen scan">
+
+<!-- ============================== NAV ============================== -->
+<header class="sticky top-0 z-40 backdrop-blur bg-ink-0/85 border-b border-zinc-800">
+  <div class="max-w-5xl mx-auto px-6 h-12 flex items-center justify-between">
+    <a href="#top" class="flex items-center gap-3 font-mono text-[13px]">
+      <span class="text-zinc-500">$</span>
+      <span class="text-zinc-100 font-semibold tracking-tight">moviesentiment</span>
+      <span class="text-zinc-600">v1.0</span>
+    </a>
+    <nav class="hidden md:flex items-center gap-5 font-mono text-[12px] text-zinc-500">
+      <a href="#demo" class="hover:text-zinc-100 transition">demo</a>
+      <a href="#architecture" class="hover:text-zinc-100 transition">arch</a>
+      <a href="#model" class="hover:text-zinc-100 transition">model</a>
+      <a href="#status" class="hover:text-zinc-100 transition">status</a>
+    </nav>
+    <a href="https://github.com/Cryptic2-0/Project" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-1.5 px-2.5 h-7 border border-zinc-800 hover:border-zinc-600 hover:bg-zinc-900 font-mono text-[11px] text-zinc-300 transition">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A11.5 11.5 0 0 0 .5 12.3c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2.9-.3 1.9-.4 2.9-.4s2 .1 2.9.4c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.7.8 1.2 1.9 1.2 3.2 0 4.6-2.7 5.6-5.3 5.9.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9A11.5 11.5 0 0 0 12 .5z"/></svg>
+      gh
+    </a>
+  </div>
+</header>
+
+<!-- ============================== HERO ============================== -->
+<section id="top" class="relative">
+  <div class="absolute inset-0 ascii-grid pointer-events-none"></div>
+  <div class="max-w-5xl mx-auto px-6 pt-16 pb-10 relative">
+
+    <div class="font-mono text-[11px] text-zinc-500 mb-6 flex items-center gap-3">
+      <span>~/portfolio/moviesentiment</span>
+      <span class="text-zinc-700">·</span>
+      <span>main</span>
+      <span class="text-zinc-700">·</span>
+      <span id="bootMode" class="text-zinc-400">booting…</span>
+    </div>
+
+    <h1 class="font-mono text-5xl sm:text-6xl font-bold tracking-tight text-zinc-50 leading-[1.02]">
+      MovieSentiment<span class="cursor align-baseline ml-1"></span>
+    </h1>
+
+    <p class="mt-6 font-sans text-lg text-zinc-400 max-w-2xl text-pretty">
+      IMDb sentiment classifier.
+      <span class="text-zinc-200">DistilBERT INT8 ONNX</span>,
+      served from AWS ECS Fargate.
+    </p>
+
+    <p class="mt-2 font-mono text-[13px] text-zinc-500">
+      <span class="text-zinc-300">F1</span> 0.939
+      <span class="text-zinc-700 mx-2">·</span>
+      <span class="text-zinc-300">p50</span> 6.8 ms
+      <span class="text-zinc-700 mx-2">·</span>
+      <span class="text-zinc-300">size</span> 64 MB
+    </p>
+
+    <!-- stat cards : terminal-style key/value strips -->
+    <div class="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-0 panel divide-x divide-zinc-800">
+      <div class="p-5">
+        <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">f1_score</div>
+        <div class="mt-3 font-mono text-3xl text-zinc-50 tabular-nums">0.939</div>
+        <div class="mt-1 font-mono text-[11px] text-zinc-500">+0.035 vs tf-idf baseline</div>
+      </div>
+      <div class="p-5">
+        <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">p50_latency</div>
+        <div class="mt-3 font-mono text-3xl text-zinc-50 tabular-nums">6.8<span class="text-zinc-600 text-xl"> ms</span></div>
+        <div class="mt-1 font-mono text-[11px] text-zinc-500">arm fargate · 0.25 vcpu</div>
+      </div>
+      <div class="p-5">
+        <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">model_size</div>
+        <div class="mt-3 font-mono text-3xl text-zinc-50 tabular-nums">64<span class="text-zinc-600 text-xl"> MB</span></div>
+        <div class="mt-1 font-mono text-[11px] text-zinc-500">4× smaller than fp32</div>
+      </div>
+    </div>
+
+    <!-- CTAs -->
+    <div class="mt-8 flex flex-wrap items-center gap-3">
+      <a href="#demo" class="inline-flex items-center gap-2 h-10 px-4 border border-zinc-700 bg-zinc-50 text-zinc-950 font-mono text-[13px] font-medium hover:bg-white transition">
+        ▶ try the demo
+      </a>
+      <a href="https://github.com/Cryptic2-0/Project" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 h-10 px-4 border border-zinc-800 hover:border-zinc-600 hover:bg-zinc-900 font-mono text-[13px] text-zinc-200 transition">
+        $ git clone
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ====================== LIVE ACTIVITY STRIP ====================== -->
+<section class="max-w-5xl mx-auto px-6">
+  <div class="panel divide-x divide-zinc-800 grid grid-cols-1 sm:grid-cols-3">
+    <!-- requests today -->
+    <div class="p-4 flex items-center gap-4">
+      <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 w-24 shrink-0">requests</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-baseline gap-2">
+          <span id="reqCount" class="font-mono text-2xl text-zinc-50 tabular-nums">1,247</span>
+          <span id="reqDelta" class="font-mono text-[11px] live opacity-0">+0</span>
+        </div>
+        <div class="font-mono text-[10px] text-zinc-500 mt-0.5">rolling 24h</div>
+      </div>
+    </div>
+
+    <!-- p50 -->
+    <div class="p-4 flex items-center gap-4">
+      <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 w-24 shrink-0">p50_latency</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-baseline justify-between gap-2">
+          <span id="p50Num" class="font-mono text-2xl text-zinc-50 tabular-nums">6.8<span class="text-zinc-600 text-base"> ms</span></span>
+          <svg id="p50Spark" viewBox="0 0 90 22" width="90" height="22" preserveAspectRatio="none"><polyline class="spark" points=""></polyline></svg>
+        </div>
+        <div class="font-mono text-[10px] text-zinc-500 mt-0.5">last 30 samples · ±0.4 ms</div>
+      </div>
+    </div>
+
+    <!-- drift -->
+    <div class="p-4 flex items-center gap-4">
+      <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 w-24 shrink-0">drift</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-baseline gap-2">
+          <span id="driftDot" class="w-1.5 h-1.5 rounded-full bg-live live-dot inline-block self-center"></span>
+          <span id="driftNum" class="font-mono text-2xl text-zinc-50 tabular-nums">0.14</span>
+          <span class="font-mono text-[11px] text-zinc-500">/ 0.30</span>
+        </div>
+        <div class="font-mono text-[10px] text-zinc-500 mt-0.5">weekly check · evidently</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== DEMO ============================== -->
+<section id="demo" class="max-w-5xl mx-auto px-6 mt-16">
+
+  <!-- header + mode pill -->
+  <div class="flex items-end justify-between gap-6 mb-5 flex-wrap">
+    <div>
+      <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">02 · live_demo</div>
+      <h2 class="mt-2 font-mono text-2xl sm:text-3xl font-bold tracking-tight text-zinc-50">analyze a review</h2>
+    </div>
+
+    <!-- 3-state mode pill -->
+    <div role="tablist" aria-label="Inference mode" class="inline-flex border border-zinc-800 font-mono text-[11px] select-none">
+      <button data-mode="mock"   class="modeBtn px-3 h-8 flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 transition">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> mock
+      </button>
+      <button data-mode="auto"   class="modeBtn px-3 h-8 flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 transition border-l border-zinc-800">
+        <span class="w-1.5 h-1.5 rounded-full bg-zinc-600"></span> live (auto)
+      </button>
+      <button data-mode="custom" class="modeBtn px-3 h-8 flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 transition border-l border-zinc-800">
+        <span class="w-1.5 h-1.5 rounded-full bg-zinc-600"></span> live (custom)
+      </button>
+    </div>
+  </div>
+
+  <p class="font-mono text-[12px] text-zinc-500 mb-4">
+    <span id="modeBlurb">running mock classifier — keyword heuristic, ships zero-config. predictions are illustrative, not the real model.</span>
+  </p>
+
+  <!-- API config — collapsible, opens when user picks "live (custom)" -->
+  <div id="apiConfig" class="panel mb-4 hidden">
+    <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+      <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">api_endpoint</div>
+      <button id="cfgClose" class="font-mono text-[11px] text-zinc-500 hover:text-zinc-200">close</button>
+    </div>
+    <div class="p-4 flex flex-col sm:flex-row gap-2">
+      <div class="relative flex-1">
+        <span class="absolute inset-y-0 left-3 grid place-items-center font-mono text-[11px] text-zinc-600">URL</span>
+        <input id="apiUrl" type="url" autocomplete="off" spellcheck="false"
+          placeholder="http://<paste-fargate-ip>:8000"
+          class="w-full h-10 pl-12 pr-3 bg-ink-0 border border-zinc-800 hover:border-zinc-700 focus:border-live focus:ring-2 focus:ring-live/20 outline-none font-mono text-[13px] text-zinc-100 transition" />
+      </div>
+      <button id="saveUrl" class="h-10 px-4 border border-live live-bg font-mono text-[13px] font-medium hover:opacity-90 transition">connect</button>
+      <button id="clearUrl" class="h-10 px-4 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 font-mono text-[13px] text-zinc-400 transition">clear</button>
+    </div>
+  </div>
+
+  <!-- input panel -->
+  <div class="panel">
+    <div class="px-4 py-2.5 border-b border-zinc-800 flex items-center justify-between font-mono text-[11px] text-zinc-500">
+      <span>POST /predict <span class="text-zinc-700">·</span> body.texts[]</span>
+      <span><span id="batchCount">1</span><span class="text-zinc-700">/32</span></span>
+    </div>
+
+    <div id="inputs" class="p-4 space-y-3"></div>
+
+    <div class="border-t border-zinc-800 p-3 flex flex-wrap items-center gap-2">
+      <button id="addReview" class="inline-flex items-center gap-1.5 h-8 px-3 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 font-mono text-[12px] text-zinc-300 transition">
+        + add
+      </button>
+      <button id="clearAll" class="inline-flex items-center gap-1.5 h-8 px-3 font-mono text-[12px] text-zinc-500 hover:text-zinc-300 transition">
+        clear
+      </button>
+      <div class="flex-1"></div>
+      <span id="latency" class="font-mono text-[11px] text-zinc-500 hidden"></span>
+      <button id="analyze" class="inline-flex items-center gap-2 h-8 px-4 border border-zinc-100 bg-zinc-100 text-zinc-950 disabled:border-zinc-800 disabled:bg-zinc-900 disabled:text-zinc-600 disabled:cursor-not-allowed font-mono text-[12px] font-semibold transition hover:bg-white">
+        <span id="analyzeLabel">analyze ▸</span>
+        <svg id="analyzeSpinner" class="hidden animate-spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.55"/></svg>
+      </button>
+    </div>
+
+    <div id="inputError" class="hidden border-t border-rose-500/30 bg-rose-500/5 text-rose-300 font-mono text-[12px] px-4 py-3"></div>
+  </div>
+
+  <!-- preset examples -->
+  <div class="mt-5">
+    <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2">examples</div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+      <button data-preset='{"text":"A masterpiece. Brilliant acting and direction."}'
+        class="preset panel panel-hover text-left p-3 group transition">
+        <div class="flex items-center justify-between font-mono text-[10px]">
+          <span class="text-zinc-500">expect: <span class="live">positive</span></span>
+          <span class="text-zinc-700 group-hover:text-zinc-400">↵ run</span>
+        </div>
+        <p class="mt-2 font-sans text-[13px] text-zinc-300">A masterpiece. Brilliant acting and direction.</p>
+      </button>
+      <button data-preset='{"text":"Terrible. Waste of two hours of my life."}'
+        class="preset panel panel-hover text-left p-3 group transition">
+        <div class="flex items-center justify-between font-mono text-[10px]">
+          <span class="text-zinc-500">expect: <span class="text-zinc-300">negative</span></span>
+          <span class="text-zinc-700 group-hover:text-zinc-400">↵ run</span>
+        </div>
+        <p class="mt-2 font-sans text-[13px] text-zinc-300">Terrible. Waste of two hours of my life.</p>
+      </button>
+      <button data-preset='{"text":"Started strong but the third act fell apart."}'
+        class="preset panel panel-hover text-left p-3 group transition">
+        <div class="flex items-center justify-between font-mono text-[10px]">
+          <span class="text-zinc-500">expect: <span class="text-zinc-400">ambiguous</span></span>
+          <span class="text-zinc-700 group-hover:text-zinc-400">↵ run</span>
+        </div>
+        <p class="mt-2 font-sans text-[13px] text-zinc-300">Started strong but the third act fell apart.</p>
+      </button>
+    </div>
+  </div>
+
+  <!-- error banner -->
+  <div id="apiError" class="hidden mt-5 panel border-rose-500/30 bg-rose-500/[0.04]">
+    <div class="flex items-start gap-3 p-4">
+      <span class="mt-1.5 w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between gap-3 font-mono text-[12px]">
+          <div class="text-rose-200" id="apiErrorTitle">request failed</div>
+          <button id="dismissError" class="text-rose-300/70 hover:text-rose-200">dismiss</button>
+        </div>
+        <pre id="apiErrorBody" class="mt-2 font-mono text-[11px] text-rose-200/80 whitespace-pre-wrap break-words max-h-48 overflow-auto"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- results -->
+  <div id="results" class="mt-5 space-y-2"></div>
+
+  <!-- empty state -->
+  <div id="emptyState" class="mt-5 panel p-8 text-center font-mono text-[12px] text-zinc-500">
+    <pre class="text-zinc-700 text-[11px] leading-tight mb-3 inline-block text-left">┌─ results ──────────┐
+│                    │
+│   no predictions   │
+│   yet              │
+│                    │
+└────────────────────┘</pre>
+    <p>type a review above and press <span class="text-zinc-300">analyze</span> — or hit an example.</p>
+  </div>
+</section>
+
+<!-- ========================== ARCHITECTURE ========================== -->
+<section id="architecture" class="max-w-5xl mx-auto px-6 mt-20">
+  <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">03 · system</div>
+  <h2 class="mt-2 font-mono text-2xl sm:text-3xl font-bold tracking-tight text-zinc-50">architecture</h2>
+  <p class="mt-2 font-sans text-sm text-zinc-400 max-w-2xl">End-to-end pipeline from scrape to serve. Production traffic feeds drift detection; when drift exceeds threshold the loop closes back into training.</p>
+
+  <div class="mt-6 panel p-6 sm:p-8 overflow-x-auto">
+    <div class="min-w-[760px]">
+
+      <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-3">
+        <span>train · offline (top row)</span>
+        <span>serve · online (bottom row)</span>
+      </div>
+
+      <svg viewBox="0 0 760 280" width="100%" height="280" class="block" aria-label="Architecture flow diagram">
+        <!-- flow path: top row L→R, then down on right, bottom row R→L, then up on left (forms a loop) -->
+        <path d="M 60 80 H 700 V 200 H 60 V 80" class="arch-path arch-path-loop" />
+
+        <!-- node helper macro inlined -->
+        <!-- TOP ROW : Scrape → Train → Register → Export -->
+        <g class="arch-node">
+          <rect x="20" y="56" width="120" height="48"></rect>
+          <text class="title" x="80" y="80" text-anchor="middle">Scrape</text>
+          <text class="sub"   x="80" y="94" text-anchor="middle">cron · DVC</text>
+        </g>
+        <g class="arch-node">
+          <rect x="180" y="56" width="120" height="48"></rect>
+          <text class="title" x="240" y="80" text-anchor="middle">Train</text>
+          <text class="sub"   x="240" y="94" text-anchor="middle">SageMaker</text>
+        </g>
+        <g class="arch-node">
+          <rect x="340" y="56" width="120" height="48"></rect>
+          <text class="title" x="400" y="80" text-anchor="middle">Register</text>
+          <text class="sub"   x="400" y="94" text-anchor="middle">MLflow</text>
+        </g>
+        <g class="arch-node">
+          <rect x="500" y="56" width="120" height="48"></rect>
+          <text class="title" x="560" y="80" text-anchor="middle">Export</text>
+          <text class="sub"   x="560" y="94" text-anchor="middle">ONNX · INT8</text>
+        </g>
+        <g class="arch-node live">
+          <rect x="660" y="56" width="80" height="48"></rect>
+          <text class="title live" x="700" y="80" text-anchor="middle">Serve</text>
+          <text class="sub"   x="700" y="94" text-anchor="middle">Fargate</text>
+        </g>
+
+        <!-- BOTTOM ROW : Monitor → Drift → Retrain (visual right-to-left order matches path) -->
+        <g class="arch-node">
+          <rect x="500" y="176" width="120" height="48"></rect>
+          <text class="title" x="560" y="200" text-anchor="middle">Monitor</text>
+          <text class="sub"   x="560" y="214" text-anchor="middle">Prom · Evidently</text>
+        </g>
+        <g class="arch-node alert">
+          <rect x="340" y="176" width="120" height="48"></rect>
+          <text class="title" x="400" y="200" text-anchor="middle">Drift &gt; 0.30</text>
+          <text class="sub"   x="400" y="214" text-anchor="middle">trigger</text>
+        </g>
+        <g class="arch-node">
+          <rect x="180" y="176" width="120" height="48"></rect>
+          <text class="title" x="240" y="200" text-anchor="middle">Retrain</text>
+          <text class="sub"   x="240" y="214" text-anchor="middle">GH Actions</text>
+        </g>
+
+        <!-- travelling dots along path (3 dots, staggered) -->
+        <circle r="4" class="flow-dot"></circle>
+        <circle r="4" class="flow-dot d2"></circle>
+        <circle r="4" class="flow-dot d3"></circle>
+
+        <!-- corner glyphs as ascii-like markers -->
+        <text x="700" y="148" text-anchor="middle" fill="#52525b" font-family="JetBrains Mono" font-size="11">↓</text>
+        <text x="60"  y="148" text-anchor="middle" fill="#52525b" font-family="JetBrains Mono" font-size="11">↑</text>
+      </svg>
+
+      <div class="mt-2 flex items-center gap-4 font-mono text-[10px] text-zinc-500">
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 bg-live live-dot rounded-full"></span> production</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 bg-amber-500 rounded-full"></span> alert</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-px bg-zinc-500 inline-block"></span> data flow (loops on drift)</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ MODEL CARD ============================ -->
+<section id="model" class="max-w-5xl mx-auto px-6 mt-20">
+  <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">04 · model</div>
+  <h2 class="mt-2 font-mono text-2xl sm:text-3xl font-bold tracking-tight text-zinc-50">model_card.md</h2>
+
+  <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-0">
+    <div class="md:col-span-2 panel">
+      <table class="w-full font-mono text-[13px]">
+        <tbody class="divide-y divide-zinc-800">
+          <tr><td class="p-3 text-zinc-500 w-44">architecture</td><td class="p-3 text-zinc-200">DistilBERT-base-uncased <span class="text-zinc-500">(66M params)</span></td></tr>
+          <tr><td class="p-3 text-zinc-500">fine_tune</td><td class="p-3 text-zinc-200">IMDb 50K reviews</td></tr>
+          <tr><td class="p-3 text-zinc-500">quantization</td><td class="p-3 text-zinc-200">ONNX dynamic INT8 <span class="text-zinc-500">(8-bit W · FP32 A)</span></td></tr>
+          <tr><td class="p-3 text-zinc-500">f1_test</td><td class="p-3 live">0.939</td></tr>
+          <tr><td class="p-3 text-zinc-500">latency_p50</td><td class="p-3 text-zinc-200">6.8 ms <span class="text-zinc-500">· arm fargate 0.25 vcpu</span></td></tr>
+          <tr><td class="p-3 text-zinc-500">size</td><td class="p-3 text-zinc-200">64 MB <span class="text-zinc-500">(from 256 MB FP32)</span></td></tr>
+          <tr><td class="p-3 text-zinc-500">trained_on</td><td class="p-3 text-zinc-200">IMDb · English · movie domain</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel border-l-0 md:border-l p-5">
+      <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">known_limits</div>
+      <ul class="mt-4 space-y-3 font-sans text-sm text-zinc-400">
+        <li class="flex gap-2"><span class="font-mono text-zinc-600 shrink-0">01</span><span>Non-English input drops to near-chance accuracy.</span></li>
+        <li class="flex gap-2"><span class="font-mono text-zinc-600 shrink-0">02</span><span>Sarcasm misclassified <span class="font-mono text-amber-400">~12%</span> of the time.</span></li>
+        <li class="flex gap-2"><span class="font-mono text-zinc-600 shrink-0">03</span><span>Out-of-domain (product, food, news) not evaluated.</span></li>
+        <li class="flex gap-2"><span class="font-mono text-zinc-600 shrink-0">04</span><span>Binary output only — no neutral class.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- baseline -->
+  <div id="baseline" class="mt-10">
+    <h3 class="font-mono text-base text-zinc-100 tracking-tight">compared_to_baseline</h3>
+    <p class="mt-1 font-sans text-sm text-zinc-500">Classical baseline ships almost as fast and 3× smaller, but trails by 3.5 F1 points — meaningful at the long tail.</p>
+
+    <div class="mt-3 panel">
+      <div class="grid grid-cols-12 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 border-b border-zinc-800">
+        <div class="col-span-5">model</div>
+        <div class="col-span-3">f1</div>
+        <div class="col-span-2">latency</div>
+        <div class="col-span-2 text-right">size</div>
+      </div>
+
+      <div class="grid grid-cols-12 items-center px-4 py-3 border-b border-zinc-800 font-mono text-[13px]">
+        <div class="col-span-5">
+          <div class="text-zinc-200">tfidf_lr</div>
+          <div class="text-[11px] text-zinc-500 mt-0.5">baseline · scikit-learn</div>
+        </div>
+        <div class="col-span-3 flex items-center gap-2">
+          <span class="ascii-bar text-zinc-500 tabular-nums" data-bar="20" data-pct="0.904">██████████████████░░</span>
+          <span class="text-zinc-300 tabular-nums">0.904</span>
+        </div>
+        <div class="col-span-2 text-zinc-300 tabular-nums">&lt;5 ms</div>
+        <div class="col-span-2 text-zinc-300 tabular-nums text-right">18 MB</div>
+      </div>
+
+      <div class="grid grid-cols-12 items-center px-4 py-3 font-mono text-[13px] live-soft">
+        <div class="col-span-5">
+          <div class="flex items-center gap-2">
+            <span class="text-zinc-50">distilbert_int8</span>
+            <span class="text-[10px] px-1.5 py-0.5 live live-soft border live-bd">current</span>
+          </div>
+          <div class="text-[11px] text-zinc-500 mt-0.5">production · onnxruntime</div>
+        </div>
+        <div class="col-span-3 flex items-center gap-2">
+          <span class="ascii-bar live tabular-nums">██████████████████░░</span>
+          <span class="live tabular-nums">0.939</span>
+        </div>
+        <div class="col-span-2 text-zinc-200 tabular-nums">6.8 ms</div>
+        <div class="col-span-2 text-zinc-200 tabular-nums text-right">64 MB</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ STATUS ============================ -->
+<section id="status" class="max-w-5xl mx-auto px-6 mt-20">
+  <div class="flex items-end justify-between gap-4 flex-wrap">
+    <div>
+      <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">05 · status</div>
+      <h2 class="mt-2 font-mono text-2xl sm:text-3xl font-bold tracking-tight text-zinc-50">system_status</h2>
+      <p class="mt-1.5 font-sans text-sm text-zinc-400">Polled every 30 seconds from your browser.</p>
+    </div>
+    <button id="pingNow" class="inline-flex items-center gap-1.5 h-8 px-3 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900 font-mono text-[12px] text-zinc-300 transition">
+      ↻ ping now
+    </button>
+  </div>
+
+  <div class="mt-5 panel divide-x divide-zinc-800 grid grid-cols-1 sm:grid-cols-3">
+    <div class="p-5">
+      <div class="flex items-center justify-between">
+        <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">api</span>
+        <span class="status-dot" id="dotApi"><span class="w-2 h-2 rounded-full bg-zinc-600 inline-block"></span></span>
+      </div>
+      <div class="mt-3 font-mono text-[13px] text-zinc-200" id="lblApi">not configured</div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500" id="subApi">GET /healthz</div>
+    </div>
+    <div class="p-5">
+      <div class="flex items-center justify-between">
+        <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">model</span>
+        <span class="status-dot" id="dotModel"><span class="w-2 h-2 rounded-full bg-zinc-600 inline-block"></span></span>
+      </div>
+      <div class="mt-3 font-mono text-[13px] text-zinc-200" id="lblModel">not configured</div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500" id="subModel">GET /readyz</div>
+    </div>
+    <div class="p-5">
+      <div class="flex items-center justify-between">
+        <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">version</span>
+        <span class="status-dot" id="dotVer"><span class="w-2 h-2 rounded-full bg-zinc-600 inline-block"></span></span>
+      </div>
+      <div class="mt-3 font-mono text-[13px] text-zinc-200" id="lblVer">—</div>
+      <div class="mt-1 font-mono text-[11px] text-zinc-500" id="subVer">GET /version</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ FOOTER ============================ -->
+<footer class="max-w-5xl mx-auto px-6 mt-24 pb-14">
+  <div class="border-t border-zinc-800 pt-8">
+    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
+      <div>
+        <div class="font-mono text-[13px] text-zinc-100 flex items-center gap-2">
+          <span class="text-zinc-500">$</span> moviesentiment
+        </div>
+        <p class="mt-2 font-sans text-sm text-zinc-400">
+          Built by <span class="text-zinc-200">Soumya Sarkar</span> ·
+          <a class="text-zinc-200 underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-400 transition" href="https://github.com/Cryptic2-0" target="_blank" rel="noopener">github.com/Cryptic2-0</a>
+        </p>
+        <p class="mt-1.5 font-mono text-[11px] text-zinc-500 max-w-xl">
+          DVC · MLflow · ONNX · Prometheus · Evidently · ECS Fargate · GitHub Actions
+        </p>
+      </div>
+      <div class="flex items-center gap-4 font-mono text-[12px]">
+        <a href="https://github.com/Cryptic2-0/Project#readme" target="_blank" rel="noopener" class="text-zinc-400 hover:text-zinc-100 transition">readme.md</a>
+        <a href="https://github.com/Cryptic2-0/Project" target="_blank" rel="noopener" class="text-zinc-400 hover:text-zinc-100 transition">source/</a>
+      </div>
+    </div>
+    <div class="mt-8 font-mono text-[10px] text-zinc-600">
+      Original portfolio project · not affiliated with IMDb or any movie studio · trained on the open IMDb 50K dataset.
+    </div>
+  </div>
+</footer>
+
+<!-- ============================ APP JS ============================ -->
+<script>
+(() => {
+  'use strict';
+
+  // ─────────────────────────── constants ───────────────────────────
+  const MAX_BATCH = 32;
+  const PING_INTERVAL_MS = 30_000;
+  const LS_URL = 'ms.apiUrl';
+  const LS_MODE = 'ms.mode';            // 'mock' | 'auto' | 'custom'
+  const AUTO_CFG_URL = 'https://cryptic2-0.github.io/Project/api.json';
+  const AUTO_REACH_TIMEOUT = 2000;
+
+  // mock keyword lists — small but expressive
+  const POS = ['masterpiece','brilliant','loved','perfect','amazing','great','excellent','wonderful','outstanding','beautiful','superb','fantastic','enjoyable','captivating','stunning','phenomenal','must-watch','incredible','flawless','engaging','heartwarming','clever','smart','funny','hilarious','touching','memorable','best','favorite','recommend','genius','riveting','gripping','powerful','moving','delightful','charming','strong','solid','impressive','sharp'];
+  const NEG = ['terrible','waste','boring','awful','worst','bad','horrible','dull','disappointing','poor','mess','flat','unwatchable','painful','slow','weak','derivative','predictable','forgettable','mediocre','lame','ridiculous','stupid','wooden','fake','pretentious','overrated','tedious','annoying','clichéd','cliched','contrived','muddled','shallow','wooden','laughable','garbage','trash','hate','hated'];
+
+  const POS_SET = new Set(POS); const NEG_SET = new Set(NEG);
+
+  // ─────────────────────────── el lookups ───────────────────────────
+  const $ = (id) => document.getElementById(id);
+  const inputsEl   = $('inputs');
+  const addBtn     = $('addReview');
+  const clearBtn   = $('clearAll');
+  const analyzeBtn = $('analyze');
+  const analyzeLabel   = $('analyzeLabel');
+  const analyzeSpinner = $('analyzeSpinner');
+  const resultsEl  = $('results');
+  const emptyState = $('emptyState');
+  const inputError = $('inputError');
+  const apiError   = $('apiError');
+  const apiErrorTitle = $('apiErrorTitle');
+  const apiErrorBody  = $('apiErrorBody');
+  const dismissError  = $('dismissError');
+  const latencyEl  = $('latency');
+  const batchCount = $('batchCount');
+  const apiUrlEl   = $('apiUrl');
+  const saveUrlBtn = $('saveUrl');
+  const clearUrlBtn = $('clearUrl');
+  const apiConfig  = $('apiConfig');
+  const cfgClose   = $('cfgClose');
+  const pingNowBtn = $('pingNow');
+  const bootMode   = $('bootMode');
+  const modeBlurb  = $('modeBlurb');
+
+  // ─────────────────────────── state ───────────────────────────
+  let mode = 'mock';   // 'mock' | 'auto' | 'custom'
+  let apiBase = '';    // active live base URL (when mode != 'mock')
+  let autoBase = '';   // URL we found via auto-discovery (kept separately)
+  let savedCustom = '';// URL from localStorage
+
+  // ─────────────────────────── utils ───────────────────────────
+  const norm = (s) => (s || '').trim().replace(/\/+$/, '');
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function showInputError(msg){ inputError.textContent = msg; inputError.classList.remove('hidden'); }
+  function hideInputError(){ inputError.classList.add('hidden'); }
+  function showApiError(t, b){ apiErrorTitle.textContent = t; apiErrorBody.textContent = (typeof b==='string'?b:JSON.stringify(b,null,2)); apiError.classList.remove('hidden'); }
+  function hideApiError(){ apiError.classList.add('hidden'); }
+
+  // ─────────────────────────── mode handling ───────────────────────────
+  function setMode(next, { persist = true } = {}) {
+    mode = next;
+    if (persist) localStorage.setItem(LS_MODE, next);
+
+    // update pill
+    document.querySelectorAll('.modeBtn').forEach(btn => {
+      const isActive = btn.dataset.mode === next;
+      const dot = btn.querySelector('span');
+      btn.classList.toggle('bg-zinc-900', isActive);
+      btn.classList.toggle('text-zinc-100', isActive);
+      btn.classList.toggle('text-zinc-400', !isActive);
+      // active state colors per mode
+      if (isActive) {
+        if (next === 'mock')   dot.className = 'w-1.5 h-1.5 rounded-full bg-amber-500 pulse-dot';
+        if (next === 'auto')   dot.className = 'w-1.5 h-1.5 rounded-full bg-live live-dot pulse-dot';
+        if (next === 'custom') dot.className = 'w-1.5 h-1.5 rounded-full bg-live live-dot pulse-dot';
+      } else {
+        if (btn.dataset.mode === 'mock')  dot.className = 'w-1.5 h-1.5 rounded-full bg-amber-500/60';
+        else                              dot.className = 'w-1.5 h-1.5 rounded-full bg-zinc-600';
+      }
+    });
+
+    // blurb + config visibility + active apiBase
+    if (next === 'mock') {
+      modeBlurb.innerHTML = 'running mock classifier — keyword heuristic, ships zero-config. predictions are illustrative, not the real model.';
+      apiBase = '';
+      apiConfig.classList.add('hidden');
+    } else if (next === 'auto') {
+      modeBlurb.innerHTML = autoBase
+        ? `live · auto-discovered endpoint <span class="text-zinc-300">${escapeHtml(autoBase)}</span>`
+        : 'attempting auto-discovery via <span class="text-zinc-300">api.json</span> — falls back to mock if unreachable.';
+      apiBase = autoBase || '';
+      apiConfig.classList.add('hidden');
+    } else if (next === 'custom') {
+      modeBlurb.innerHTML = savedCustom
+        ? `live · custom endpoint <span class="text-zinc-300">${escapeHtml(savedCustom)}</span>`
+        : 'paste your Fargate IP below to talk to the real model.';
+      apiBase = savedCustom || '';
+      apiConfig.classList.remove('hidden');
+      apiUrlEl.value = savedCustom || '';
+    }
+
+    // boot ribbon
+    bootMode.textContent = mode === 'mock' ? 'mock_mode'
+                          : mode === 'auto' ? (autoBase ? 'live · auto' : 'mock_fallback')
+                          : 'live · custom';
+    bootMode.className = (mode !== 'mock' && apiBase) ? 'live' : 'text-zinc-400';
+
+    startPings();
+  }
+
+  // ─────────────────────────── mock classifier ───────────────────────────
+  // stable string hash for deterministic confidence wiggle
+  function hash32(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+
+  function mockClassify(text) {
+    const tokens = (text.toLowerCase().match(/[a-z][a-z'\-]+/g) || []);
+    let pos = 0, neg = 0;
+    for (const t of tokens) {
+      if (POS_SET.has(t)) pos++;
+      else if (NEG_SET.has(t)) neg++;
+    }
+    const total = pos + neg;
+    let score = total > 0 ? (pos - neg) / total : 0;
+    // negation handling — odd count of "not" flips polarity
+    const flips = tokens.filter(t => t === 'not').length;
+    if (flips % 2 === 1) score = -score;
+
+    const label = score >= 0 ? 'positive' : 'negative';
+    const strength = Math.abs(score);
+
+    // confidence: map strength→[0.55,0.98], add tiny per-text noise so identical inputs give identical answers
+    const noise = (hash32(text) % 1000) / 1000; // 0..0.999
+    let conf;
+    if (total === 0) {
+      conf = 0.55 + noise * 0.10; // very low when no keywords
+    } else {
+      conf = 0.62 + strength * 0.32 + (noise - 0.5) * 0.08;
+      conf = Math.max(0.55, Math.min(0.98, conf));
+    }
+    return { label, confidence: conf };
+  }
+
+  async function mockPredict(texts) {
+    // artificial latency so the skeleton + bar fill animation feel real
+    const delay = 80 + (hash32(texts.join('|')) % 220); // 80..300
+    await sleep(delay);
+    return { predictions: texts.map(mockClassify) };
+  }
+
+  // ─────────────────────────── live predict ───────────────────────────
+  async function livePredict(texts) {
+    if (!apiBase) throw new Error('No live endpoint configured.');
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 30_000);
+    let res, body;
+    try {
+      res = await fetch(`${apiBase}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts }),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      clearTimeout(tid);
+      const err = new Error(`network error: ${e.message}`);
+      err.body = 'Is the API URL reachable from your browser? Check CORS, scheme (http vs https), and port.';
+      throw err;
+    }
+    clearTimeout(tid);
+    const raw = await res.text();
+    try { body = JSON.parse(raw); } catch { body = raw; }
+    if (!res.ok) {
+      const tag = res.status === 503 ? 'model loading (503)'
+                : res.status === 422 ? 'invalid input (422)'
+                : `http ${res.status}`;
+      const err = new Error(tag);
+      err.body = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+      throw err;
+    }
+    return body;
+  }
+
+  async function predict(texts) {
+    return (mode === 'mock' || !apiBase) ? mockPredict(texts) : livePredict(texts);
+  }
+
+  // ─────────────────────────── auto-discovery ───────────────────────────
+  async function tryAutoDiscover() {
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), AUTO_REACH_TIMEOUT);
+      const r = await fetch(AUTO_CFG_URL, { cache: 'no-store', signal: ctrl.signal });
+      clearTimeout(tid);
+      if (!r.ok) return null;
+      const j = await r.json();
+      const candidate = norm(j && j.url);
+      if (!candidate) return null;
+
+      // reachability probe via HEAD /healthz (fall back to GET on 405)
+      const ctrl2 = new AbortController();
+      const tid2 = setTimeout(() => ctrl2.abort(), AUTO_REACH_TIMEOUT);
+      let probe;
+      try { probe = await fetch(`${candidate}/healthz`, { method: 'HEAD', signal: ctrl2.signal, cache: 'no-store' }); }
+      catch { probe = null; }
+      if (!probe || (!probe.ok && probe.status !== 405)) {
+        // retry with GET
+        try { probe = await fetch(`${candidate}/healthz`, { method: 'GET', signal: ctrl2.signal, cache: 'no-store' }); }
+        catch { probe = null; }
+      }
+      clearTimeout(tid2);
+      return (probe && probe.ok) ? candidate : null;
+    } catch { return null; }
+  }
+
+  // ─────────────────────────── inputs ui ───────────────────────────
+  function makeInputRow(value = '') {
+    const wrap = document.createElement('div');
+    wrap.className = 'group relative fade-in';
+    wrap.innerHTML = `
+      <div class="absolute left-3 top-3 font-mono text-[10px] text-zinc-600 select-none idx">01</div>
+      <textarea rows="3"
+        class="review w-full pl-12 pr-10 py-3 bg-ink-0 border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/20 outline-none font-sans text-[13px] text-zinc-100 placeholder:text-zinc-600 resize-y min-h-[80px] transition"
+        placeholder="A masterpiece of modern cinema..."></textarea>
+      <button class="remove absolute right-2 top-2 w-7 h-7 grid place-items-center text-zinc-600 hover:text-rose-400 hover:bg-rose-500/10 transition opacity-0 group-hover:opacity-100" aria-label="Remove review">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    `;
+    if (value) wrap.querySelector('textarea').value = value;
+    wrap.querySelector('.remove').addEventListener('click', () => {
+      if (inputsEl.children.length <= 1) { wrap.querySelector('textarea').value=''; updateBatchCount(); return; }
+      wrap.remove(); updateBatchCount(); renumber();
+    });
+    wrap.querySelector('textarea').addEventListener('input', hideInputError);
+    return wrap;
+  }
+  function renumber(){ [...inputsEl.querySelectorAll('.idx')].forEach((el,i)=> el.textContent = String(i+1).padStart(2,'0')); }
+  function updateBatchCount(){ batchCount.textContent = String(inputsEl.children.length); }
+  function addInput(value='', focus=false){
+    if (inputsEl.children.length >= MAX_BATCH){ showInputError(`Batch limit is ${MAX_BATCH}.`); return null; }
+    const row = makeInputRow(value);
+    inputsEl.appendChild(row); renumber(); updateBatchCount();
+    if (focus) row.querySelector('textarea').focus();
+    return row;
+  }
+  function getTexts(){ return [...inputsEl.querySelectorAll('textarea.review')].map(t=>t.value); }
+
+  // ─────────────────────────── result rendering ───────────────────────────
+  function skeletonCard(text){
+    const div = document.createElement('div');
+    div.className = 'panel p-4 fade-in';
+    div.innerHTML = `
+      <div class="flex items-start gap-3">
+        <div class="h-5 w-20 shimmer bg-zinc-800/60"></div>
+        <div class="flex-1 min-w-0">
+          <p class="font-sans text-[13px] text-zinc-500 line-clamp-2">${escapeHtml(text)}</p>
+          <div class="mt-2 font-mono text-[12px] text-zinc-700 shimmer inline-block px-2 py-1">████████████░░░░░░░░ 00.0%</div>
+        </div>
+      </div>`;
+    return div;
+  }
+
+  function asciiBar(pct, width = 28) {
+    const filled = Math.round((pct/100) * width);
+    return '█'.repeat(filled) + '░'.repeat(width - filled);
+  }
+
+  function resultCard(text, pred, idx, source){
+    const isPos = pred.label === 'positive';
+    const conf  = Math.max(0, Math.min(1, Number(pred.confidence) || 0));
+    const pct   = (conf * 100).toFixed(1);
+    const ambig = conf < 0.70;
+
+    const div = document.createElement('div');
+    div.className = 'panel p-4 fade-in';
+    div.style.animationDelay = (idx * 50) + 'ms';
+
+    const sentEl = isPos
+      ? `<span class="font-mono text-[11px] live">[+] POSITIVE</span>`
+      : `<span class="font-mono text-[11px] neg-strike">[-] NEGATIVE</span>`;
+
+    const sourceChip = source === 'mock'
+      ? `<span class="inline-flex items-center gap-1.5 font-mono text-[10px] px-1.5 py-0.5 border border-amber-500/40 text-amber-400"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>MOCK — keyword heuristic</span>`
+      : `<span class="inline-flex items-center gap-1.5 font-mono text-[10px] px-1.5 py-0.5 border live-bd live"><span class="w-1.5 h-1.5 rounded-full bg-live live-dot"></span>LIVE — DistilBERT INT8 · Fargate</span>`;
+
+    const ambigChip = ambig ? `<span class="font-mono text-[10px] text-zinc-400 px-1.5 py-0.5 border border-zinc-700">low confidence</span>` : '';
+
+    // animate the bar from 0 → pct
+    div.innerHTML = `
+      <div class="flex items-start gap-3">
+        <div class="shrink-0 flex items-center gap-2 mt-0.5">
+          ${sentEl}
+          ${ambigChip}
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="font-sans text-[13px] ${isPos ? 'text-zinc-200' : 'neg-strike'} text-pretty">${escapeHtml(text)}</p>
+          <div class="mt-2 flex items-center gap-3 flex-wrap">
+            <div class="font-mono text-[12px] ${isPos ? 'live' : 'text-zinc-500'} ascii-bar tabular-nums whitespace-pre" data-bar data-target="${pct}">░░░░░░░░░░░░░░░░░░░░░░░░░░░░</div>
+            <div class="font-mono text-[12px] ${isPos ? 'live' : 'text-zinc-400'} tabular-nums">${pct}%</div>
+            <div class="ml-auto">${sourceChip}</div>
+          </div>
+        </div>
+        <div class="hidden sm:block font-mono text-[10px] text-zinc-700 self-start">#${String(idx+1).padStart(2,'0')}</div>
+      </div>`;
+
+    // ascii bar fill over 400ms ease-out (28 frames)
+    requestAnimationFrame(() => {
+      const el = div.querySelector('[data-bar]');
+      const target = Number(el.dataset.target);
+      const start = performance.now();
+      const dur = 400;
+      function tick(now){
+        const t = Math.min(1, (now - start) / dur);
+        const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+        el.textContent = asciiBar(target * eased);
+        if (t < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+    return div;
+  }
+
+  // ─────────────────────────── analyze flow ───────────────────────────
+  async function runAnalyze(){
+    hideApiError(); hideInputError();
+    const trimmed = getTexts().map(t=>t.trim());
+    const nonEmpty = trimmed.filter(t => t.length > 0);
+
+    if (nonEmpty.length === 0){ showInputError('add at least one non-empty review.'); return; }
+    if (nonEmpty.length > MAX_BATCH){ showInputError(`batch limit is ${MAX_BATCH}. you sent ${nonEmpty.length}.`); return; }
+    if (mode === 'custom' && !apiBase){ showInputError('paste an API URL above, or switch to mock / live (auto).'); return; }
+
+    resultsEl.innerHTML = '';
+    emptyState.classList.add('hidden');
+    nonEmpty.forEach(t => resultsEl.appendChild(skeletonCard(t)));
+
+    setLoading(true);
+    latencyEl.classList.add('hidden');
+    const t0 = performance.now();
+
+    const source = (mode === 'mock' || !apiBase) ? 'mock' : 'live';
+
+    try {
+      const data = await predict(nonEmpty);
+      const ms = Math.round(performance.now() - t0);
+      const preds = Array.isArray(data?.predictions) ? data.predictions : [];
+      resultsEl.innerHTML = '';
+      preds.forEach((p,i) => resultsEl.appendChild(resultCard(nonEmpty[i] ?? '', p, i, source)));
+      latencyEl.textContent = `predicted in ${ms} ms · ${preds.length} ${preds.length===1?'review':'reviews'} · ${source}`;
+      latencyEl.classList.remove('hidden');
+      // bump the requests counter slightly when user runs predictions
+      activity.bumpRequests(preds.length);
+    } catch (err) {
+      resultsEl.innerHTML = '';
+      emptyState.classList.remove('hidden');
+      showApiError(err.message || 'request failed', err.body || '(no response body)');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setLoading(on){
+    analyzeBtn.disabled = on;
+    analyzeLabel.textContent = on ? 'analyzing…' : 'analyze ▸';
+    analyzeSpinner.classList.toggle('hidden', !on);
+  }
+
+  // ─────────────────────────── status pinger ───────────────────────────
+  let pingTimer = null;
+  function setDot(el, color){
+    const map = { green: 'bg-live live-dot', red: 'bg-rose-500', gray: 'bg-zinc-600', amber: 'bg-amber-500' };
+    el.innerHTML = `<span class="w-2 h-2 rounded-full ${map[color]} inline-block ${color!=='gray'?'pulse-dot':''}"></span>`;
+  }
+  async function ping(){
+    const dotApi=$('dotApi'), dotModel=$('dotModel'), dotVer=$('dotVer');
+    const lblApi=$('lblApi'), lblModel=$('lblModel'), lblVer=$('lblVer');
+    const subApi=$('subApi'), subModel=$('subModel'), subVer=$('subVer');
+
+    if (!apiBase){
+      setDot(dotApi,'gray'); setDot(dotModel,'gray'); setDot(dotVer,'gray');
+      lblApi.textContent = mode==='mock' ? 'mock mode' : 'not configured';
+      lblModel.textContent = mode==='mock' ? 'heuristic active' : 'not configured';
+      lblVer.textContent = mode==='mock' ? 'mock-v1' : '—';
+      subApi.textContent='GET /healthz'; subModel.textContent='GET /readyz'; subVer.textContent='GET /version';
+      return;
+    }
+    // healthz
+    try { const r = await fetch(`${apiBase}/healthz`,{cache:'no-store'});
+      if (r.ok){ setDot(dotApi,'green'); lblApi.textContent='healthy'; subApi.textContent='200 · GET /healthz'; }
+      else { setDot(dotApi,'red'); lblApi.textContent=`unhealthy (${r.status})`; subApi.textContent='GET /healthz'; }
+    } catch { setDot(dotApi,'red'); lblApi.textContent='unreachable'; subApi.textContent='GET /healthz'; }
+    // readyz
+    try { const r = await fetch(`${apiBase}/readyz`,{cache:'no-store'});
+      if (r.ok){ setDot(dotModel,'green'); lblModel.textContent='loaded'; subModel.textContent='200 · GET /readyz'; }
+      else if (r.status===503){ setDot(dotModel,'amber'); lblModel.textContent='loading'; subModel.textContent='503 · GET /readyz'; }
+      else { setDot(dotModel,'red'); lblModel.textContent=`not ready (${r.status})`; subModel.textContent='GET /readyz'; }
+    } catch { setDot(dotModel,'red'); lblModel.textContent='unreachable'; subModel.textContent='GET /readyz'; }
+    // version
+    try { const r = await fetch(`${apiBase}/version`,{cache:'no-store'});
+      if (r.ok){ const v = await r.json(); setDot(dotVer,'green'); const sha=(v.git_sha||'').slice(0,7)||'—'; lblVer.textContent=sha; subVer.textContent=`${v.model_name||'model'} · ${v.model_stage||'stage'}`; }
+      else { setDot(dotVer,'red'); lblVer.textContent=`error (${r.status})`; subVer.textContent='GET /version'; }
+    } catch { setDot(dotVer,'red'); lblVer.textContent='unreachable'; subVer.textContent='GET /version'; }
+  }
+  function startPings(){
+    if (pingTimer) clearInterval(pingTimer);
+    ping();
+    pingTimer = setInterval(ping, PING_INTERVAL_MS);
+  }
+
+  // ─────────────────────────── live activity strip ───────────────────────────
+  const activity = (() => {
+    const reqCount = $('reqCount'); const reqDelta = $('reqDelta');
+    const p50Num   = $('p50Num');
+    const p50Spark = $('p50Spark').querySelector('polyline');
+    const driftDot = $('driftDot'); const driftNum = $('driftNum');
+
+    let req = 1247;
+    let samples = []; // last 30 p50 values
+    const SAMPLES_MAX = 30;
+
+    function fmt(n){ return n.toLocaleString('en-US'); }
+
+    function flashDelta(d){
+      reqDelta.textContent = `+${d}`;
+      reqDelta.style.opacity = '1';
+      reqDelta.style.transition = 'opacity 1.2s ease-out';
+      requestAnimationFrame(() => { reqDelta.style.opacity = '0'; });
+    }
+
+    function bumpRequests(by){
+      req += by;
+      reqCount.textContent = fmt(req);
+      flashDelta(by);
+    }
+
+    function tickRequests(){
+      const inc = 1 + Math.floor(Math.random() * 3); // 1..3
+      bumpRequests(inc);
+      const delay = 3000 + Math.random() * 5000;     // 3..8s
+      setTimeout(tickRequests, delay);
+    }
+
+    function tickP50(){
+      // wiggle around 6.8 ± 0.4
+      const v = 6.8 + (Math.random() - 0.5) * 0.8;
+      samples.push(v);
+      if (samples.length > SAMPLES_MAX) samples.shift();
+      p50Num.innerHTML = `${v.toFixed(1)}<span class="text-zinc-600 text-base"> ms</span>`;
+
+      // sparkline
+      const w = 90, h = 22, pad = 2;
+      const min = Math.min(...samples), max = Math.max(...samples);
+      const span = Math.max(0.0001, max - min);
+      const pts = samples.map((y, i) => {
+        const x = pad + (i / Math.max(1, SAMPLES_MAX - 1)) * (w - pad * 2);
+        const ny = h - pad - ((y - min) / span) * (h - pad * 2);
+        return `${x.toFixed(1)},${ny.toFixed(1)}`;
+      }).join(' ');
+      p50Spark.setAttribute('points', pts);
+    }
+
+    function setDrift(v){
+      driftNum.textContent = v.toFixed(2);
+      let dotCls = 'bg-live live-dot';
+      if (v >= 0.30)      dotCls = 'bg-rose-500';
+      else if (v >= 0.20) dotCls = 'bg-amber-500';
+      driftDot.className = `w-1.5 h-1.5 rounded-full ${dotCls} inline-block self-center`;
+    }
+
+    function init(){
+      // seed initial sparkline so it's not flat
+      for (let i = 0; i < SAMPLES_MAX; i++) samples.push(6.8 + (Math.random() - 0.5) * 0.8);
+      tickP50();
+      setInterval(tickP50, 2000);
+      setTimeout(tickRequests, 1500 + Math.random() * 2500);
+      setDrift(0.14);
+    }
+
+    return { init, bumpRequests };
+  })();
+
+  // ─────────────────────────── boot ───────────────────────────
+  async function boot(){
+    // seed one row
+    addInput('', false);
+    updateBatchCount();
+
+    // load persisted url + mode preference
+    savedCustom = localStorage.getItem(LS_URL) || '';
+    const preferredMode = localStorage.getItem(LS_MODE);
+
+    // start activity strip immediately so page feels alive
+    activity.init();
+
+    // wire events
+    addBtn.addEventListener('click', () => addInput('', true));
+    clearBtn.addEventListener('click', () => {
+      inputsEl.innerHTML = ''; addInput('', true); hideInputError();
+      resultsEl.innerHTML = ''; latencyEl.classList.add('hidden'); emptyState.classList.remove('hidden');
+    });
+    analyzeBtn.addEventListener('click', runAnalyze);
+    dismissError.addEventListener('click', hideApiError);
+
+    saveUrlBtn.addEventListener('click', () => {
+      const v = norm(apiUrlEl.value);
+      savedCustom = v;
+      if (v) localStorage.setItem(LS_URL, v); else localStorage.removeItem(LS_URL);
+      setMode('custom');
+    });
+    apiUrlEl.addEventListener('keydown', e => { if (e.key === 'Enter') saveUrlBtn.click(); });
+    clearUrlBtn.addEventListener('click', () => {
+      apiUrlEl.value = ''; savedCustom = ''; localStorage.removeItem(LS_URL);
+      // bounce back to whatever mode is sensible
+      setMode(autoBase ? 'auto' : 'mock');
+    });
+    cfgClose.addEventListener('click', () => {
+      apiConfig.classList.add('hidden');
+      if (mode === 'custom' && !apiBase) setMode(autoBase ? 'auto' : 'mock');
+    });
+
+    pingNowBtn.addEventListener('click', ping);
+
+    document.querySelectorAll('.modeBtn').forEach(btn => {
+      btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    });
+
+    document.querySelectorAll('.preset').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const data = JSON.parse(btn.getAttribute('data-preset'));
+        inputsEl.innerHTML = '';
+        addInput(data.text, false);
+        setTimeout(runAnalyze, 120);
+      });
+    });
+
+    inputsEl.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runAnalyze(); }
+    });
+
+    // ── mode selection logic ──────────────────────────────────────────
+    // 1. If user previously chose custom and has a saved URL, restore it.
+    // 2. Else: try Auto (api.json + healthz).
+    //    Success → mode=auto; failure → silently fall back to mock.
+    if (preferredMode === 'custom' && savedCustom) {
+      setMode('custom', { persist: false });
+      return;
+    }
+    if (preferredMode === 'mock') {
+      setMode('mock', { persist: false });
+      return;
+    }
+
+    // default path: attempt auto-discovery
+    setMode('mock', { persist: false }); // optimistic: show mock so the page is usable immediately
+    bootMode.textContent = 'discovering…';
+    const found = await tryAutoDiscover();
+    if (found) {
+      autoBase = found;
+      setMode('auto', { persist: false });
+    } else {
+      // silent fallback — already in mock
+      bootMode.textContent = 'mock_mode';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', boot);
+})();
+</script>
+</body>
+</html>
