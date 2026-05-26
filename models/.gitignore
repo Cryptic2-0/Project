@@ -1,3 +1,5 @@
 /distilbert_onnx
 /distilbert_onnx_int8
 /distilbert
+/distilbert_multitask
+/distilbert_multitask_onnx

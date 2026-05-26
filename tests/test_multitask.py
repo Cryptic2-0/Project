@@ -31,6 +31,53 @@ def test_analyze_returns_503_without_multitask_model(client: TestClient) -> None
     assert r.status_code == 503
 
 
+def test_analyze_writes_reservoir_row_when_engine_present(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Patch the multi-task engine; assert /analyze returns 200 and writes a
+    v2 reservoir row carrying movie_id + per-head columns."""
+    from moviesentiment.serve import api as api_mod
+
+    canned = AnalyzeResponse(
+        text="great",
+        sentiment=Prediction(text="great", label="positive", confidence=0.93),
+        aspects=AspectScores(
+            acting=[0.05, 0.05, 0.9],
+            plot=[0.1, 0.1, 0.8],
+            visuals=[0.05, 0.15, 0.8],
+            pacing=[0.2, 0.2, 0.6],
+            sound=[0.1, 0.2, 0.7],
+        ),
+        emotions=EmotionScores(
+            joy=0.62, anger=0.05, fear=0.02, sadness=0.05, surprise=0.21, disgust=0.05
+        ),
+        spoiler_prob=0.08,
+        helpfulness=0.72,
+    )
+
+    class _FakeEngine:
+        def analyze(self, text: str) -> AnalyzeResponse:  # noqa: D401
+            return canned
+
+    monkeypatch.setattr(api_mod, "multitask_engine", _FakeEngine())
+    captured: list[dict[str, object]] = []
+    monkeypatch.setattr(api_mod.sampler, "add", lambda rec: captured.append(rec))
+    monkeypatch.setattr(api_mod.sampler, "maybe_flush", lambda _p: False)
+
+    r = client.post("/analyze?movie_id=tt0111161", json={"text": "great"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sentiment"]["label"] == "positive"
+    assert body["spoiler_prob"] == pytest.approx(0.08)
+    assert captured, "reservoir.add was not called"
+    row = captured[0]
+    assert row["movie_id"] == "tt0111161"
+    assert row["emotion_top"] == "joy"
+    assert row["spoiler_prob"] == pytest.approx(0.08)
+    assert row["aspect_acting"] == pytest.approx(0.9 - 0.05)
+    assert "timestamp" in row
+
+
 def test_analyze_rejects_oversized_text(client: TestClient) -> None:
     r = client.post("/analyze", json={"text": "x" * 6000})
     # 422 from Pydantic max_length=5000 before the route sees it.
@@ -124,6 +171,44 @@ def test_insights_groups_by_movie_when_column_present(
     assert ins_tt2 is not None
     assert ins_tt2.n_reviews == 1
     assert ins_none is None
+
+
+def test_materialise_all_writes_per_movie_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from moviesentiment.serve import insights as ins_mod
+
+    sample = pd.DataFrame(
+        [
+            {"text": "a", "label": "positive", "movie_id": "tt1"},
+            {"text": "b", "label": "positive", "movie_id": "tt1"},
+            {"text": "c", "label": "negative", "movie_id": "tt2"},
+        ]
+    )
+    path = tmp_path / "recent.parquet"
+    sample.to_parquet(path, index=False)
+    monkeypatch.setattr(ins_mod, "_RESERVOIR_PATH", path)
+
+    out = tmp_path / "insights"
+    n = ins_mod.materialise_all(out)
+    assert n == 2
+    assert (out / "tt1.json").exists()
+    assert (out / "tt2.json").exists()
+    payload = json.loads((out / "tt1.json").read_text())
+    assert payload["n_reviews"] == 2
+
+
+def test_materialise_all_noop_when_no_movie_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from moviesentiment.serve import insights as ins_mod
+
+    sample = pd.DataFrame([{"text": "a", "label": "positive"}])
+    path = tmp_path / "recent.parquet"
+    sample.to_parquet(path, index=False)
+    monkeypatch.setattr(ins_mod, "_RESERVOIR_PATH", path)
+
+    assert ins_mod.materialise_all(tmp_path / "out") == 0
 
 
 def test_insights_topics_loaded_when_materialised(

@@ -124,6 +124,7 @@ disable_error_code = ["no-untyped-call"]  # transformers AutoTokenizer.from_pret
 module = [
     "moviesentiment.models.multitask",
     "moviesentiment.models.multitask_train",
+    "moviesentiment.models.onnx_export_multitask",
     "moviesentiment.serve.multitask_inference",
     "moviesentiment.data.multitask_loaders",
 ]

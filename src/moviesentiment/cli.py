@@ -94,6 +94,57 @@ def insights_batch(
     typer.echo(f"Wrote insights for {n} movie(s) -> {out}")
 
 
+@app.command(name="prep-emotion")
+def prep_emotion(
+    out: Path = typer.Option(Path("data/interim/multitask/emotion.parquet"), help="Output parquet"),
+) -> None:
+    """Download GoEmotions, map to Ekman six, write parquet."""
+    from moviesentiment.data.multitask_loaders import load_emotion
+
+    p = load_emotion(out)
+    typer.echo(f"Emotion parquet -> {p}")
+
+
+@app.command(name="prep-spoiler")
+def prep_spoiler(
+    csv: Path = typer.Argument(..., help="Kaggle IMDB Spoiler CSV path"),
+    out: Path = typer.Option(Path("data/interim/multitask/spoiler.parquet"), help="Output parquet"),
+) -> None:
+    """Reshape Kaggle IMDB Spoiler Dataset CSV into parquet."""
+    from moviesentiment.data.multitask_loaders import load_spoiler
+
+    p = load_spoiler(csv, out)
+    typer.echo(f"Spoiler parquet -> {p}")
+
+
+@app.command(name="prep-helpfulness")
+def prep_helpfulness(
+    reviews: Path = typer.Option(
+        Path("data/interim/clean.parquet"), help="Cleaned reviews parquet"
+    ),
+    out: Path = typer.Option(
+        Path("data/interim/multitask/helpfulness.parquet"), help="Output parquet"
+    ),
+) -> None:
+    """Map IMDb rating to helpfulness proxy in [0, 1]."""
+    from moviesentiment.data.multitask_loaders import load_helpfulness
+
+    p = load_helpfulness(reviews, out)
+    typer.echo(f"Helpfulness parquet -> {p}")
+
+
+@app.command(name="distill-absa")
+def distill_absa_cli(
+    text: Path = typer.Option(Path("data/interim/clean.parquet"), help="Source text parquet"),
+    out: Path = typer.Option(Path("data/interim/multitask/absa.parquet"), help="Output parquet"),
+) -> None:
+    """Distill ABSA teacher labels over the cleaned IMDb corpus. Needs GPU."""
+    from moviesentiment.data.multitask_loaders import distill_absa
+
+    p = distill_absa(text, out)
+    typer.echo(f"ABSA distilled parquet -> {p}")
+
+
 @app.command()
 def serve_api(
     host: str = typer.Option("0.0.0.0"),

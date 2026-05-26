@@ -64,3 +64,40 @@ stages:
     metrics:
       - metrics/transformer.json:
           cache: false
+
+  prep_emotion:
+    cmd: python -m moviesentiment.cli prep-emotion
+    deps:
+      - src/moviesentiment/data/multitask_loaders.py
+    outs:
+      - data/interim/multitask/emotion.parquet
+
+  prep_helpfulness:
+    cmd: python -m moviesentiment.cli prep-helpfulness
+    deps:
+      - data/interim/clean.parquet
+      - src/moviesentiment/data/multitask_loaders.py
+    outs:
+      - data/interim/multitask/helpfulness.parquet
+
+  train_multitask:
+    cmd: python -m moviesentiment.cli train multitask
+    deps:
+      - data/processed/train.parquet
+      - data/interim/multitask/emotion.parquet
+      - data/interim/multitask/helpfulness.parquet
+      - src/moviesentiment/models/multitask.py
+      - src/moviesentiment/models/multitask_train.py
+    params:
+      - multitask
+    metrics:
+      - metrics/multitask.json:
+          cache: false
+
+  export_multitask_onnx:
+    cmd: python -m moviesentiment.models.onnx_export_multitask
+    deps:
+      - models/distilbert_multitask/model.pt
+      - src/moviesentiment/models/onnx_export_multitask.py
+    outs:
+      - models/distilbert_multitask_onnx/model.onnx

@@ -208,17 +208,44 @@ def sample_state() -> JSONResponse:
 
 @app.post("/analyze", response_model=AnalyzeResponse, tags=["inference"])
 @limiter.limit("30/minute")
-def analyze(request: Request, req: AnalyzeRequest) -> AnalyzeResponse:
+def analyze(
+    request: Request,
+    req: AnalyzeRequest,
+    movie_id: str | None = None,
+) -> AnalyzeResponse:
     """v2 multi-task analyse: sentiment + ABSA + emotion + spoiler + helpfulness.
 
-    Returns 503 until the multi-task ONNX artefact is trained and bundled. See
-    docs/future_improvements.md for the training plan.
+    Optional `?movie_id=tt0111161` query param tags the reservoir row for the
+    /insights endpoint. Returns 503 until the multi-task ONNX artefact lands.
     """
     if multitask_engine is None:
         raise HTTPException(status_code=503, detail="multitask model not loaded")
     if len(req.text) > settings.max_text_length:
         raise HTTPException(status_code=422, detail="text exceeds max length")
-    return multitask_engine.analyze(req.text)
+    resp = multitask_engine.analyze(req.text)
+
+    # v2 reservoir row — per-head outputs so /insights can aggregate without
+    # re-running inference. v1-shape consumers still see the legacy columns.
+    aspect_signed = {
+        f"aspect_{name}": float(scores[2] - scores[0])  # P(pos) - P(neg)
+        for name, scores in resp.aspects.model_dump().items()
+    }
+    emotion_dict = resp.emotions.model_dump()
+    top_emotion = max(emotion_dict, key=lambda k: emotion_dict[k])
+    record = {
+        "text": req.text,
+        "label": resp.sentiment.label,
+        "confidence": resp.sentiment.confidence,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "movie_id": movie_id or "",
+        "emotion_top": top_emotion,
+        "spoiler_prob": resp.spoiler_prob,
+        "helpfulness": resp.helpfulness,
+        **aspect_signed,
+    }
+    sampler.add(record)
+    sampler.maybe_flush(settings.data_dir / "production" / "recent.parquet")
+    return resp
 
 
 @app.get("/insights/{movie_id}", response_model=InsightsResponse, tags=["inference"])
