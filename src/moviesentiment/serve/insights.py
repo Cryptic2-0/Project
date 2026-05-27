@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from moviesentiment.config import settings
+from moviesentiment.config import settings as settings  # explicit re-export
 from moviesentiment.models.multitask import ASPECTS, EMOTIONS
 from moviesentiment.serve.schemas import InsightsResponse
 

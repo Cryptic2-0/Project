@@ -110,7 +110,7 @@ def _build_combined_dataset(params: dict[str, Any], tokenizer: Any) -> Any:
     rng.shuffle(rows)
     print(f"[multitask] joint dataset n={len(rows)} per-task={counts}")
 
-    class _ListDataset(Dataset):
+    class _ListDataset(Dataset[dict[str, Any]]):
         def __init__(self, items: list[dict[str, Any]]) -> None:
             self._items = items
 

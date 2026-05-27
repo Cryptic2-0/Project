@@ -101,3 +101,19 @@ stages:
       hash: md5
       md5: 6bd63677b83dd1835b8f8d93dbe49630
       size: 94
+  export_multitask_onnx:
+    cmd: python -m moviesentiment.models.onnx_export_multitask
+    deps:
+    - path: models/distilbert_multitask/model.pt
+      hash: md5
+      md5: 48a87abed0a29812fe6b567f341dbc57
+      size: 265567282
+    - path: src/moviesentiment/models/onnx_export_multitask.py
+      hash: md5
+      md5: 540e796c3573e29a0976ec3173ce147e
+      size: 4164
+    outs:
+    - path: models/distilbert_multitask_onnx/model.onnx
+      hash: md5
+      md5: 8a26dc67c181fbe8abadd42006758f7a
+      size: 66824331
