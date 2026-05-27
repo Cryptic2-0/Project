@@ -116,8 +116,9 @@ def train_multitask() -> None:
 
         pad = DataCollatorWithPadding(tokenizer)
         # Pull label columns out before padding; collator only knows input_ids.
-        # Explicit dtypes — datasets serialises NaN as None which torch.tensor
-        # cannot type-infer (Could not infer dtype of NoneType).
+        # datasets / pyarrow stores missing values as Python None, which
+        # torch.tensor cannot type-infer ("Could not infer dtype of NoneType").
+        # Guard every scalar AND every element of the aspect list.
         label_cols = (
             "labels_sentiment",
             "labels_emotion",
@@ -126,24 +127,32 @@ def train_multitask() -> None:
             "labels_helpfulness",
         )
 
-        def _to_float(v: Any) -> float:
+        def _as_int(v: Any, default: int = -100) -> int:
+            return default if v is None else int(v)
+
+        def _as_int_list(vs: Any, default: int = -100, n: int = 5) -> list[int]:
+            if vs is None:
+                return [default] * n
+            return [_as_int(x, default) for x in vs]
+
+        def _as_float(v: Any) -> float:
             return float("nan") if v is None else float(v)
 
         labels = {
             "labels_sentiment": torch.tensor(
-                [int(b["labels_sentiment"]) for b in batch], dtype=torch.long
+                [_as_int(b.get("labels_sentiment")) for b in batch], dtype=torch.long
             ),
             "labels_emotion": torch.tensor(
-                [int(b["labels_emotion"]) for b in batch], dtype=torch.long
+                [_as_int(b.get("labels_emotion")) for b in batch], dtype=torch.long
             ),
             "labels_spoiler": torch.tensor(
-                [int(b["labels_spoiler"]) for b in batch], dtype=torch.long
+                [_as_int(b.get("labels_spoiler")) for b in batch], dtype=torch.long
             ),
             "labels_aspect": torch.tensor(
-                [[int(x) for x in b["labels_aspect"]] for b in batch], dtype=torch.long
+                [_as_int_list(b.get("labels_aspect")) for b in batch], dtype=torch.long
             ),
             "labels_helpfulness": torch.tensor(
-                [_to_float(b["labels_helpfulness"]) for b in batch], dtype=torch.float32
+                [_as_float(b.get("labels_helpfulness")) for b in batch], dtype=torch.float32
             ),
         }
         text_batch = [{k: v for k, v in b.items() if k not in label_cols} for b in batch]
