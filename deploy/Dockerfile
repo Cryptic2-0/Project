@@ -28,6 +28,11 @@ COPY models/distilbert_onnx/ ./models/distilbert_onnx/
 
 ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}
+# The lifespan needs to write the v2 multi-task ONNX into /app/models at boot
+# when bootstrapping from S3. /app/models is created by the earlier COPYs as
+# root-owned; chown it (and the rest of /app) to the runtime user so the
+# bootstrap can mkdir + write the new subdirectory.
+RUN chown -R app:app /app
 USER app
 ENV PYTHONPATH=/app/src
 ENV PORT=8000
