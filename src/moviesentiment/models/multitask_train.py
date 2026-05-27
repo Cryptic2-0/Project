@@ -31,57 +31,96 @@ def _load_params() -> dict[str, Any]:
 
 
 def _build_combined_dataset(params: dict[str, Any], tokenizer: Any) -> Any:
-    """Stitch together every task parquet that exists into one dataset."""
+    """Stitch every task parquet into one in-memory list of token dicts.
+
+    Avoids `datasets.concatenate_datasets` + pyarrow because schema unification
+    quietly converts our `-100` / `NaN` sentinels into pyarrow `null`, which
+    surfaces in the DataLoader collate as `Could not infer dtype of NoneType`.
+    A plain Python list preserves the exact Python ints / floats we wrote.
+    """
+    import random
+
     import pandas as pd
-    from datasets import Dataset, concatenate_datasets
+    from torch.utils.data import Dataset
 
     max_length = int(params.get("max_length", 256))
-    sources: list[Any] = []
+    seed = int(params.get("seed", 42))
 
-    def _tokenize(batch: dict[str, Any]) -> dict[str, Any]:
-        return tokenizer(
-            batch["text"],
+    def _row(text: str, **labels: Any) -> dict[str, Any]:
+        enc = tokenizer(
+            str(text),
             truncation=True,
             max_length=max_length,
             padding=False,
         )
+        # Sentinel defaults; per-task block overrides only the label this task
+        # supervises. Plain Python ints / floats — never None.
+        defaults: dict[str, Any] = {
+            "labels_sentiment": -100,
+            "labels_emotion": -100,
+            "labels_spoiler": -100,
+            "labels_aspect": [-100, -100, -100, -100, -100],
+            "labels_helpfulness": float("nan"),
+        }
+        defaults.update(labels)
+        return {**enc, **defaults}
 
-    def _add(df: pd.DataFrame, key: str, value_col: str, default: Any) -> Any:
-        ds = Dataset.from_pandas(df.reset_index(drop=True))
-        ds = ds.map(_tokenize, batched=True, remove_columns=["text"])
-        # Mark which task this row supervises; others get sentinel ignore values.
-        for col in (
-            "labels_sentiment",
-            "labels_emotion",
-            "labels_spoiler",
-        ):
-            if col != key:
-                ds = ds.map(lambda _ex, c=col: {c: -100}, batched=False)
-        if key != "labels_aspect":
-            ds = ds.map(lambda _ex: {"labels_aspect": [-100] * 5}, batched=False)
-        if key != "labels_helpfulness":
-            ds = ds.map(lambda _ex: {"labels_helpfulness": float("nan")}, batched=False)
-        ds = ds.rename_column(value_col, key)
-        return ds
+    rows: list[dict[str, Any]] = []
 
+    def _ingest(p: str, label_key: str, cast: Any = int) -> int:
+        df = pd.read_parquet(p)
+        before = len(rows)
+        for text, label in zip(df["text"].tolist(), df["label"].tolist(), strict=False):
+            if text is None:
+                continue
+            value = cast(label) if label is not None else None
+            if value is None:
+                continue
+            rows.append(_row(text, **{label_key: value}))
+        return len(rows) - before
+
+    counts: dict[str, int] = {}
     if (p := params.get("sentiment_path")) and Path(p).exists():
-        sources.append(_add(pd.read_parquet(p), "labels_sentiment", "label", -100))
+        counts["sentiment"] = _ingest(p, "labels_sentiment", int)
     if (p := params.get("spoiler_path")) and Path(p).exists():
-        sources.append(_add(pd.read_parquet(p), "labels_spoiler", "label", -100))
+        counts["spoiler"] = _ingest(p, "labels_spoiler", int)
     if (p := params.get("emotion_path")) and Path(p).exists():
-        sources.append(_add(pd.read_parquet(p), "labels_emotion", "label", -100))
+        counts["emotion"] = _ingest(p, "labels_emotion", int)
     if (p := params.get("absa_path")) and Path(p).exists():
-        sources.append(_add(pd.read_parquet(p), "labels_aspect", "label", -100))
+        # absa labels are length-5 lists already.
+        df = pd.read_parquet(p)
+        c = 0
+        for text, label in zip(df["text"].tolist(), df["label"].tolist(), strict=False):
+            if text is None or label is None:
+                continue
+            rows.append(_row(text, labels_aspect=[int(x) for x in label]))
+            c += 1
+        counts["absa"] = c
     if (p := params.get("helpfulness_path")) and Path(p).exists():
-        sources.append(_add(pd.read_parquet(p), "labels_helpfulness", "label", float("nan")))
+        counts["helpfulness"] = _ingest(p, "labels_helpfulness", float)
 
-    if not sources:
+    if not rows:
         raise FileNotFoundError(
             "No task parquets found. See docs/future_improvements.md for the v2 "
             "training-data plan; populate at least one of "
             "params.yaml::multitask.*_path."
         )
-    return concatenate_datasets(sources).shuffle(seed=int(params.get("seed", 42)))
+
+    rng = random.Random(seed)
+    rng.shuffle(rows)
+    print(f"[multitask] joint dataset n={len(rows)} per-task={counts}")
+
+    class _ListDataset(Dataset):
+        def __init__(self, items: list[dict[str, Any]]) -> None:
+            self._items = items
+
+        def __len__(self) -> int:
+            return len(self._items)
+
+        def __getitem__(self, idx: int) -> dict[str, Any]:
+            return self._items[idx]
+
+    return _ListDataset(rows)
 
 
 def train_multitask() -> None:
