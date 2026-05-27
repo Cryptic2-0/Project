@@ -35,7 +35,8 @@ def export_multitask_onnx(
     out = out_dir or settings.model_dir / "distilbert_multitask_onnx"
     out.mkdir(parents=True, exist_ok=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(str(checkpoint_dir))
+    # nosec B615 - checkpoint_dir is a local DVC-pulled path, not a Hub identifier.
+    tokenizer = AutoTokenizer.from_pretrained(str(checkpoint_dir))  # nosec B615
     tokenizer.save_pretrained(str(out))
 
     # Rebuild architecture, load weights. We don't store the model class on disk —
@@ -46,7 +47,10 @@ def export_multitask_onnx(
     model_name = params.get("model_name", "distilbert-base-uncased")
     revision = params.get("revision") or settings.hf_revision or None
     model = build_multitask_model(model_name, revision=revision)
-    state = torch.load(checkpoint_dir / "model.pt", map_location="cpu")
+    # nosec B614 - checkpoint is produced by our own SageMaker job and stored in DVC.
+    state = torch.load(
+        checkpoint_dir / "model.pt", map_location="cpu", weights_only=True
+    )  # nosec B614
     model.load_state_dict(state)
     model.eval()
 
