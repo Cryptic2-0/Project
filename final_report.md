@@ -2,7 +2,7 @@
 
 > End-to-end MLOps build. From an empty repo to a multi-task DistilBERT serving on AWS Fargate at ~$6/mo, with a v1 binary sentiment classifier and a v2 five-head review-intelligence model deployed in production.
 
-**Report date:** 2026-05-28
+**Report date:** 2026-05-29
 **Repo:** `github.com/Cryptic2-0/Project`
 **Owner:** Soumya Sarkar (`Cryptic2-0`)
 **Scope:** Entire history from `e83f696` (scaffold, 2026-05-24) through `0f95416` (latest on `main`, 2026-05-28).
