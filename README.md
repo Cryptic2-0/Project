@@ -4,6 +4,8 @@
 
 [![CI](https://github.com/Cryptic2-0/Project/actions/workflows/ci.yml/badge.svg)](https://github.com/Cryptic2-0/Project/actions/workflows/ci.yml)
 [![OSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Cryptic2-0/Project/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Cryptic2-0/Project)
+[![v1 on HF](https://img.shields.io/badge/HF-v1%20DistilBERT%20INT8-yellow)](https://huggingface.co/Cryptic2-0/moviesentiment-distilbert-onnx-int8)
+[![v2 on HF](https://img.shields.io/badge/HF-v2%20Multi--task%20INT8-yellow)](https://huggingface.co/Cryptic2-0/moviesentiment-multitask-onnx-int8)
 
 **Live demo**:
 
@@ -91,8 +93,16 @@ git clone https://github.com/Cryptic2-0/Project moviesentiment
 cd moviesentiment
 pip install uv
 uv pip install -e ".[dev]"
+
+# Option A — pull ONNX models from HuggingFace (public, no auth):
+huggingface-cli download Cryptic2-0/moviesentiment-distilbert-onnx-int8 \
+  --local-dir models/distilbert_onnx_int8
+huggingface-cli download Cryptic2-0/moviesentiment-multitask-onnx-int8 \
+  --local-dir models/distilbert_multitask_onnx
+
+# Option B — DVC (S3-backed, requires AWS creds):
 dvc pull
-make export-onnx   # exports base/fine-tuned model → ONNX INT8
+
 make serve         # starts FastAPI on :8000
 ```
 

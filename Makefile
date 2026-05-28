@@ -1,4 +1,4 @@
-.PHONY: install install-dev train export-onnx serve test lint fmt type-check ci-local docker-up smoke-test clean drift loadtest perf-estimate validate-data lock pre-commit docs
+.PHONY: install install-dev train export-onnx serve test lint fmt type-check ci-local docker-up smoke-test clean drift loadtest perf-estimate validate-data lock pre-commit docs hf-push
 
 install:
 	uv pip install -e .
@@ -44,6 +44,11 @@ pre-commit:
 
 docs:
 	bash scripts/build_docs.sh
+
+# Push v1 + v2 ONNX models to HuggingFace Hub. Requires HF_TOKEN env var
+# (write scope). Idempotent — re-running uploads only changed files.
+hf-push:
+	python scripts/push_to_hf.py
 
 lint:
 	ruff check src tests
