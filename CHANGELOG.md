@@ -68,10 +68,13 @@ with per-genre F1.
 ### Documented (no code change)
 
 - **AWS live state** verified 2026-05-29 (Appendix C of `final_report.md`).
-  ECS service + Lambdas torn down post-build; S3 + ECR + log group +
-  task definition family alive. `multitask_onnx/` artefacts intact.
+  ECS service + Lambdas + SQS + DynamoDB + EventBridge all torn down
+  post-build; S3 + ECR + log group + task definition family alive.
+  `multitask_onnx/` artefacts intact (~67 MB).
+- **CloudWatch retention** on `/ecs/moviesentiment` bumped to 90 days
+  (was unset / never expire). 842 KB currently stored.
 - **Permission gaps** for the `moviesentiment-ci` IAM user catalogued
-  with the operations each blocks.
+  alongside the per-operation IAM-class requirements.
 
 ---
 

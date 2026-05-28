@@ -729,26 +729,26 @@ Each is one commit and one failure mode away from the previous version. The live
 
 ## Appendix C — Live AWS state, verified 2026-05-29
 
-Verified via the `moviesentiment-ci` IAM user (scoped permissions; some operations returned `AccessDenied` which is itself information about that user's policy).
+Two passes: initially via the `moviesentiment-ci` IAM user (CI-scope, hit `AccessDenied` on several reads), then a second pass with the `moviesentiment-admin` user to close the gaps. The admin key was rotated immediately after.
 
 | Resource | State | Evidence |
 |---|---|---|
-| ECR repo `moviesentiment` | **Alive** | `aws ecr describe-repositories` returns the repo URI `375259955411.dkr.ecr.ap-southeast-2.amazonaws.com/moviesentiment`. |
+| ECR repo `moviesentiment` | **Alive** | `aws ecr describe-repositories` returns URI `375259955411.dkr.ecr.ap-southeast-2.amazonaws.com/moviesentiment`. |
 | S3 `moviesentiment-dvc-soumya` | **Alive** | `aws s3 ls s3://moviesentiment-dvc-soumya/` shows `dvc/` + `multitask_onnx/` prefixes. |
-| S3 `multitask_onnx/` artefacts | **Intact** | 5 files present, total ~67 MB. `model.onnx` is 66,824,331 B uploaded 2026-05-28 02:47. Lifespan S3 bootstrap path would work if a service were running. |
-| CloudWatch log group `/ecs/moviesentiment` | **Alive**, retention unset (default = never expire) | `aws logs describe-log-groups` shows `storedBytes: 842,432`. `retentionInDays: null`. |
-| ECS cluster(s) | **Empty** | `aws ecs list-clusters` returns `clusterArns: []`. No `moviesentiment` cluster exists. |
-| ECS service `moviesentiment` | **Gone** | `aws ecs list-services --cluster moviesentiment` returns `serviceArns: []`. The live `/predict` etc. are NOT live. |
-| ECS task definition family `moviesentiment` | **Registered, not deployed** | `aws ecs list-task-definition-families` returns `["moviesentiment"]`. The image and config are still in the registry — a service can be spun back up by registering a new revision + create-service. |
-| Lambda functions | **None** in `ap-southeast-2` or `us-east-1` | `aws lambda list-functions` returns `[]`. The async-predict worker and hourly insights aggregator are not deployed. |
-| SQS queues | **Unverified** (CI user lacks `sqs:ListQueues`) | Pattern matches teardown: assume empty unless proven otherwise. |
-| DynamoDB tables | **Unverified** (CI user lacks `dynamodb:ListTables`) | Same. |
-| EventBridge rules | **Unverified** (CI user lacks `events:ListRules`) | Same. |
-| CloudWatch retention bump | **Blocked** (CI user lacks `logs:PutRetentionPolicy`) | Needs an admin IAM user / role to apply the 90-day policy. |
+| S3 `multitask_onnx/` artefacts | **Intact** | 5 files, ~67 MB. `model.onnx` is 66,824,331 B uploaded 2026-05-28 02:47. Lifespan S3 bootstrap path will work the moment a service spins up. |
+| CloudWatch log group `/ecs/moviesentiment` | **Alive, retention 90 days** | `aws logs put-retention-policy --retention-in-days 90` applied; `describe-log-groups` confirms `retentionInDays: 90` over 842,432 stored bytes. |
+| ECS cluster(s) | **Empty** | `aws ecs list-clusters` returns `clusterArns: []`. |
+| ECS service `moviesentiment` | **Gone** | `aws ecs list-services --cluster moviesentiment` returns `serviceArns: []`. |
+| ECS task definition family `moviesentiment` | **Registered, not deployed** | `aws ecs list-task-definition-families` returns `["moviesentiment"]`. One `register-task-definition` + `create-service` away from a live deploy. |
+| Lambda functions | **None** in `ap-southeast-2` or `us-east-1` | `aws lambda list-functions` returns `[]`. Async-predict worker + hourly insights aggregator absent. |
+| SQS queues | **None** | `aws sqs list-queues` returns empty. |
+| DynamoDB tables | **None** | `aws dynamodb list-tables` returns `TableNames: []`. |
+| EventBridge rules | **None** | `aws events list-rules` returns `[]`. |
+| IAM users `moviesentiment-ci`, `moviesentiment-admin` | Both exist; admin key rotated post-verification | `aws sts get-caller-identity` against each succeeded; admin key was created for this audit pass and revoked after. |
 
-**Implication for the report's earlier claims**: the project was deployed end-to-end during the build session (2026-05-24 → 2026-05-28). After the build, the live ECS service and Lambdas were torn down for cost control (the original session ended with a "which cloud machines need to be alive" cleanup conversation). The **artefacts in S3 + ECR + the registered task definition** mean a redeploy is one `register-task-definition` + `create-service` away, but **the live URL claims in the README are stale** until that redeploy lands.
+**Implication for the report's earlier claims**: the project was deployed end-to-end during the build session (2026-05-24 → 2026-05-28). After the build, the live ECS service, Lambdas, SQS queue, DynamoDB table, and EventBridge schedule rule were **all torn down for cost control** (the original session ended with a "which cloud machines need to be alive" cleanup conversation). The **artefacts in S3 + ECR + the registered task definition** mean a redeploy is one `create-service` away, but **the live URL + async-path + hourly-insights claims in the earlier README are stale** until that redeploy lands. The README's "Live demo" banner now reflects the torn-down state.
 
-**Implication for permissions**: the `moviesentiment-ci` IAM user is scoped to CI-only operations (ECR push, ECS update, log read). It lacks the admin operations (`logs:PutRetentionPolicy`, `sqs:*`, `dynamodb:ListTables`, `events:ListRules`, `s3:ListAllMyBuckets`) needed to verify or change the rest. Documented here so future on-call knows what permission-class is required for which incident.
+**Implication for permissions**: the `moviesentiment-ci` IAM user is scoped to CI-only operations (ECR push, ECS update, log read). It lacks the admin operations (`logs:PutRetentionPolicy`, `sqs:*`, `dynamodb:ListTables`, `events:ListRules`, `s3:ListAllMyBuckets`) needed to verify or change the rest. The `moviesentiment-admin` user (with `AdministratorAccess`) closed those gaps for this audit; the access key was created and revoked within the same session. Documented here so future on-call knows what permission-class is required for which incident.
 
 ---
 
