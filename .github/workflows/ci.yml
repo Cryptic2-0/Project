@@ -49,6 +49,11 @@ jobs:
             --ignore-vuln CVE-2026-27459
       - name: Test
         run: pytest -m "not slow" --cov=moviesentiment --cov-fail-under=85 -v
+      - name: Calibration regression gate
+        # Allow-missing: brier.json is only produced by full eval runs, not
+        # by `pytest -m "not slow"`. When the retrain workflow writes the
+        # file, this step starts enforcing the threshold.
+        run: python scripts/check_calibration.py --allow-missing
 
   build-image:
     needs: lint-test
