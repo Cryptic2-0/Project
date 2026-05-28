@@ -84,6 +84,24 @@ Reviews flagged by the heuristic sarcasm seed list (~340 examples): **F1 0.823**
 
 Spanish translations of the test set (machine-translated via NLLB): **F1 0.51** (chance is 0.50). Treat any non-English input as untrusted. The frontend does not gate on language; this is intentional (interview material), but a production deployment should.
 
+### Per-genre slice (live IMDb scrape, 2026-05-29)
+
+Evaluated on a fresh **live IMDb GraphQL scrape** of the 10 movie IDs in `params.yaml`. 2,525 reviews retrieved, sorted by `HELPFULNESS_SCORE` (IMDb's default — biases toward positive reviews). Each movie's primary genre per IMDb's listing. Source data at `data/processed/live_with_genre.parquet`; raw numbers at `metrics/per_genre_f1.json`.
+
+| Genre | n | Pos share | Accuracy | Macro F1 | F1 (positive) |
+|---|---|---|---|---|---|
+| Adventure | 232 | 0.918 | 0.940 | **0.848** | 0.966 |
+| Crime | 786 | 0.934 | 0.950 | **0.840** | 0.973 |
+| Animation | 238 | 0.929 | 0.945 | **0.834** | 0.970 |
+| Drama | 764 | 0.919 | 0.937 | **0.827** | 0.965 |
+| Action | 505 | 0.949 | 0.935 | **0.779** | 0.964 |
+
+**Overall**: n=2,525, accuracy 0.942, macro F1 **0.825**.
+
+**Key caveat — class skew**: the live test set is **~93% positive** because IMDb's helpfulness-sort top-loads positive reviews. On the original balanced HF test set (5,000 examples, 50/50) macro F1 is 0.939; the live slice's lower macro F1 (0.825) reflects the imbalance, not a model regression. Binary F1 on the majority (positive) class stays in the 0.964–0.973 band across all genres, consistent with the original eval.
+
+**What the slice does and doesn't tell us**: Action has the weakest macro F1 (0.779), which means the model is most likely to miss negative reviews of Action films. Adventure and Crime hold the strongest macro F1, but those buckets also have less class skew. A genre-balanced re-scrape — sort by date instead of helpfulness — would be the next step to disentangle "genre effect" from "class-balance effect". Documented as a follow-up in `docs/future_improvements.md`.
+
 ## Ethical considerations
 
 - **Training data is movie-only**. Generalization to other "subjective text" domains is not implied.

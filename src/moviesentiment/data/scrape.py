@@ -9,11 +9,14 @@ Two data sources:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import pandas as pd
 import requests
@@ -21,10 +24,13 @@ import requests
 _LOG = logging.getLogger(__name__)
 
 _GRAPHQL_URL = "https://caching.graphql.imdb.com/"
-_PERSISTED_HASH = "d389bc70c27f09c00b663705f0112254e8a7c75cde1cfd30e63a2d98c1080c87"
+# Persisted-query SHA for the TitleReviewsRefine operation. IMDb rotates this
+# on every imdb-web-next release; capture a fresh value from the browser
+# Network tab + paste here (or set MS_IMDB_PERSISTED_HASH at runtime).
+_PERSISTED_HASH = "286aee4ac14648e42c02c576e0cd29c33e9113f022290145cb1872968b389505"
 _BASE_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
 )
 _PAGE_SIZE = 25
 _SLEEP_S = 0.8
@@ -77,6 +83,9 @@ def _load_hf(out_path: Path) -> int:
 
 def _prime_session(movie_id: str) -> requests.Session:
     session = requests.Session()
+    cookie = os.environ.get("MS_IMDB_COOKIE", "")
+    if cookie:
+        session.headers["Cookie"] = cookie
     session.get(
         f"https://www.imdb.com/title/{movie_id}/reviews/",
         headers={
@@ -90,29 +99,47 @@ def _prime_session(movie_id: str) -> requests.Session:
 
 
 def _graphql_headers(movie_id: str) -> dict[str, str]:
-    return {
+    headers = {
         "User-Agent": _BASE_UA,
         "Accept": "application/graphql+json, application/json",
         "Content-Type": "application/json",
         "Origin": "https://www.imdb.com",
-        "Referer": f"https://www.imdb.com/title/{movie_id}/reviews/",
-        "x-imdb-client-name": "imdb-web-next",
-        "x-imdb-client-version": "1.0.0",
+        "Referer": "https://www.imdb.com/",
+        "x-imdb-client-name": "imdb-web-next-localized",
+        "x-imdb-user-country": "US",
+        "x-imdb-user-language": "en-US",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-site",
     }
+    cookie = os.environ.get("MS_IMDB_COOKIE", "")
+    if cookie:
+        headers["Cookie"] = cookie
+    return headers
 
 
-def _build_payload(movie_id: str, cursor: str | None) -> dict[str, Any]:
+def _build_query_params(movie_id: str, cursor: str | None) -> dict[str, str]:
+    """Build URL query-string params for the GraphQL GET call.
+
+    IMDb's imdb-web-next-localized client sends operationName + JSON-encoded
+    `variables` + JSON-encoded `extensions.persistedQuery` as URL parameters.
+    """
+    variables = {
+        "after": cursor or "",
+        "const": movie_id,
+        "filter": {},
+        "first": _PAGE_SIZE,
+        "locale": "en-US",
+        "sort": {"by": "HELPFULNESS_SCORE", "order": "DESC"},
+    }
+    if not cursor:
+        variables.pop("after")
+    sha = os.environ.get("MS_IMDB_PERSISTED_HASH", _PERSISTED_HASH)
+    extensions = {"persistedQuery": {"sha256Hash": sha, "version": 1}}
     return {
         "operationName": "TitleReviewsRefine",
-        "variables": {
-            "after": cursor,
-            "const": movie_id,
-            "filter": {},
-            "first": _PAGE_SIZE,
-            "locale": "en-US",
-            "sort": {"by": "HELPFULNESS_SCORE", "order": "DESC"},
-        },
-        "extensions": {"persistedQuery": {"sha256Hash": _PERSISTED_HASH, "version": 1}},
+        "variables": json.dumps(variables, separators=(",", ":")),
+        "extensions": json.dumps(extensions, separators=(",", ":")),
     }
 
 
@@ -121,10 +148,10 @@ def _fetch_page(
     movie_id: str,
     cursor: str | None,
 ) -> tuple[list[Any], str | None]:
-    resp = session.post(
-        _GRAPHQL_URL,
+    url = f"{_GRAPHQL_URL}?{urlencode(_build_query_params(movie_id, cursor))}"
+    resp = session.get(
+        url,
         headers=_graphql_headers(movie_id),
-        json=_build_payload(movie_id, cursor),
         timeout=30,
     )
     resp.raise_for_status()
@@ -141,8 +168,13 @@ def _fetch_page(
 
 def _parse_edge(edge: dict[str, Any], movie_id: str, scraped_at: str) -> dict[str, Any] | None:
     node: dict[str, Any] = edge["node"]
-    rating: int | None = node.get("rating")
-    if rating is None or 5 <= rating <= 6:
+    # IMDb renamed `rating` -> `authorRating` in the imdb-web-next-localized
+    # client. Accept either for forward / backward compatibility.
+    rating_raw = node.get("authorRating", node.get("rating"))
+    if rating_raw is None:
+        return None
+    rating: int = int(rating_raw)
+    if 5 <= rating <= 6:
         return None
     plaid: Any = (node.get("text") or {}).get("originalText") or {}
     text = str(plaid.get("plaidHtml", "")) if isinstance(plaid, dict) else ""

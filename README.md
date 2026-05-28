@@ -5,15 +5,29 @@
 [![CI](https://github.com/Cryptic2-0/Project/actions/workflows/ci.yml/badge.svg)](https://github.com/Cryptic2-0/Project/actions/workflows/ci.yml)
 [![OSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Cryptic2-0/Project/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Cryptic2-0/Project)
 
-**Live demo** (deployed on AWS ECS Fargate, `ap-southeast-2`):
+**Live demo**:
+
+> **Currently torn down for cost control** (verified 2026-05-29). The ECS Fargate service and Lambdas were scaled-to-zero after the build session. All artefacts remain:
+> - ECR image `375259955411.dkr.ecr.ap-southeast-2.amazonaws.com/moviesentiment:latest`
+> - S3 `s3://moviesentiment-dvc-soumya/multitask_onnx/` (v2 ONNX, 66 MB)
+> - Task definition family `moviesentiment` registered
+>
+> Redeploy is one command away — see `docs/runbook.md` §3 or run:
+> ```bash
+> aws ecs create-service --cluster moviesentiment --service-name moviesentiment \
+>   --task-definition moviesentiment --desired-count 1 --launch-type FARGATE \
+>   --network-configuration "awsvpcConfiguration={subnets=[<subnet>],securityGroups=[<sg>],assignPublicIp=ENABLED}" \
+>   --region ap-southeast-2
+> ```
+>
+> Local serving works against the same image via `make serve` or `make docker-up`.
 
 ```bash
-curl -X POST http://54.206.111.36:8000/predict \
+# Sample request (works against any deployed instance):
+curl -X POST http://<host>:8000/predict \
      -H "Content-Type: application/json" \
      -d '{"texts":["A masterpiece of modern cinema.","Worst film I have ever seen."]}'
 ```
-
-> Public IP rotates when the Fargate task restarts. Check `gh issues` or the latest commit for the current URL, or run `make smoke-test` locally.
 
 ---
 

@@ -727,6 +727,31 @@ Each is one commit and one failure mode away from the previous version. The live
 
 ---
 
+## Appendix C — Live AWS state, verified 2026-05-29
+
+Verified via the `moviesentiment-ci` IAM user (scoped permissions; some operations returned `AccessDenied` which is itself information about that user's policy).
+
+| Resource | State | Evidence |
+|---|---|---|
+| ECR repo `moviesentiment` | **Alive** | `aws ecr describe-repositories` returns the repo URI `375259955411.dkr.ecr.ap-southeast-2.amazonaws.com/moviesentiment`. |
+| S3 `moviesentiment-dvc-soumya` | **Alive** | `aws s3 ls s3://moviesentiment-dvc-soumya/` shows `dvc/` + `multitask_onnx/` prefixes. |
+| S3 `multitask_onnx/` artefacts | **Intact** | 5 files present, total ~67 MB. `model.onnx` is 66,824,331 B uploaded 2026-05-28 02:47. Lifespan S3 bootstrap path would work if a service were running. |
+| CloudWatch log group `/ecs/moviesentiment` | **Alive**, retention unset (default = never expire) | `aws logs describe-log-groups` shows `storedBytes: 842,432`. `retentionInDays: null`. |
+| ECS cluster(s) | **Empty** | `aws ecs list-clusters` returns `clusterArns: []`. No `moviesentiment` cluster exists. |
+| ECS service `moviesentiment` | **Gone** | `aws ecs list-services --cluster moviesentiment` returns `serviceArns: []`. The live `/predict` etc. are NOT live. |
+| ECS task definition family `moviesentiment` | **Registered, not deployed** | `aws ecs list-task-definition-families` returns `["moviesentiment"]`. The image and config are still in the registry — a service can be spun back up by registering a new revision + create-service. |
+| Lambda functions | **None** in `ap-southeast-2` or `us-east-1` | `aws lambda list-functions` returns `[]`. The async-predict worker and hourly insights aggregator are not deployed. |
+| SQS queues | **Unverified** (CI user lacks `sqs:ListQueues`) | Pattern matches teardown: assume empty unless proven otherwise. |
+| DynamoDB tables | **Unverified** (CI user lacks `dynamodb:ListTables`) | Same. |
+| EventBridge rules | **Unverified** (CI user lacks `events:ListRules`) | Same. |
+| CloudWatch retention bump | **Blocked** (CI user lacks `logs:PutRetentionPolicy`) | Needs an admin IAM user / role to apply the 90-day policy. |
+
+**Implication for the report's earlier claims**: the project was deployed end-to-end during the build session (2026-05-24 → 2026-05-28). After the build, the live ECS service and Lambdas were torn down for cost control (the original session ended with a "which cloud machines need to be alive" cleanup conversation). The **artefacts in S3 + ECR + the registered task definition** mean a redeploy is one `register-task-definition` + `create-service` away, but **the live URL claims in the README are stale** until that redeploy lands.
+
+**Implication for permissions**: the `moviesentiment-ci` IAM user is scoped to CI-only operations (ECR push, ECS update, log read). It lacks the admin operations (`logs:PutRetentionPolicy`, `sqs:*`, `dynamodb:ListTables`, `events:ListRules`, `s3:ListAllMyBuckets`) needed to verify or change the rest. Documented here so future on-call knows what permission-class is required for which incident.
+
+---
+
 ## Appendix B — [NEEDS CONFIRMATION] items
 
 These claims are inferred from prior conversation logs, the local repo state, or pricing tables; they should be verified against the actual AWS console / git state before being relied on. The author's AWS keys were rotated after the build session by design (the keys pasted into the chat had to be deleted), so live AWS queries from this session are not possible. Confirmation paths are listed inline.
