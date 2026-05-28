@@ -75,8 +75,10 @@ jobs:
         # HF is the public source of truth (v2.3+). No auth needed — repo
         # is public. Replaces the previous DVC + S3 pull which required
         # AWS_ACCESS_KEY_ID to still be valid in repo secrets.
+        # The CLI was renamed `huggingface-cli` -> `hf` in huggingface_hub
+        # 1.x; use the new entry point.
         run: |
-          huggingface-cli download Cryptic2-0/moviesentiment-distilbert-onnx-int8 \
+          hf download Cryptic2-0/moviesentiment-distilbert-onnx-int8 \
             --local-dir models/distilbert_onnx_int8
 
       - uses: docker/login-action@v3
