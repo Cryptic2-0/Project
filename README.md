@@ -112,6 +112,9 @@ curl -X POST http://localhost:8000/predict \
      -d '{"texts": ["A complete masterpiece.", "Worst film I have ever seen."]}'
 ```
 
+> **Full walkthrough** for running the model + frontend UI + Grafana dashboard locally: [`docs/demo_walkthrough.md`](docs/demo_walkthrough.md).
+> **To drive AWS spend to $0**: [`docs/aws_teardown.md`](docs/aws_teardown.md).
+
 ---
 
 ## Results

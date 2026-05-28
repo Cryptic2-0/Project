@@ -1,12 +1,27 @@
 # MovieSentiment — Final Project Report
 
-> End-to-end MLOps build. From an empty repo to a multi-task DistilBERT serving on AWS Fargate at ~$6/mo, with a v1 binary sentiment classifier and a v2 five-head review-intelligence model deployed in production.
+> **Status: COMPLETE (v3.0) — 2026-05-29.** End-to-end MLOps build,
+> portfolio-hardened, models published on HuggingFace, AWS scaled to
+> ~$0.37/mo (storage only). Live deploy is one `create-service` away,
+> documented in `docs/runbook.md` §3. Demo path is local — see
+> `docs/demo_walkthrough.md`.
 
 **Report date:** 2026-05-29
-**Repo:** `github.com/Cryptic2-0/Project`
+**Repo:** `github.com/Cryptic2-0/Project` (tag `v3.0`)
 **Owner:** Soumya Sarkar (`Cryptic2-0`)
-**Scope:** Entire history from `e83f696` (scaffold, 2026-05-24) through `0f95416` (latest on `main`, 2026-05-28).
-**Branch state at report time:** 52 non-merge commits on `main`; tags `v0.0-scaffold`, `v0.1-baseline`, `v0.2-serving`, `v0.3-deployed`, `v1.0`, `v2.0`.
+**Scope:** Entire history from `e83f696` (scaffold, 2026-05-24) through tag `v3.0` (2026-05-29).
+**Tag chain:** `v0.0-scaffold` → `v0.1-baseline` → `v0.2-serving` → `v0.3-deployed` → `v1.0` → `v2.0` → `v2.1` → `v2.2` → `v2.3` → **`v3.0`**.
+
+## Public artefacts
+
+| Artefact | URL |
+|---|---|
+| Source repo | https://github.com/Cryptic2-0/Project |
+| v1 INT8 ONNX (DistilBERT binary sentiment) | https://huggingface.co/Cryptic2-0/moviesentiment-distilbert-onnx-int8 |
+| v2 INT8 ONNX (multi-task: sentiment + ABSA + emotion + spoiler + helpfulness) | https://huggingface.co/Cryptic2-0/moviesentiment-multitask-onnx-int8 |
+| Demo walkthrough | [`docs/demo_walkthrough.md`](docs/demo_walkthrough.md) |
+| AWS teardown to $0 | [`docs/aws_teardown.md`](docs/aws_teardown.md) |
+| Interview talking points | [`docs/interview_talking_points.md`](docs/interview_talking_points.md) |
 
 ---
 
