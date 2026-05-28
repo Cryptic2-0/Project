@@ -70,6 +70,7 @@ dev = [
     "pre-commit>=3.6",
     "bandit[toml]>=1.7",
     "pip-audit>=2.7",
+    "streamlit>=1.30",  # apps/annotate active-learning labeller
 ]
 
 [project.scripts]

@@ -36,6 +36,8 @@ from moviesentiment.serve.schemas import (
     InsightsResponse,
     PredictRequest,
     PredictResponse,
+    SimilarHit,
+    SimilarResponse,
     TokenAttribution,
 )
 from moviesentiment.serve.tracing import setup_tracing
@@ -282,6 +284,28 @@ def insights(movie_id: str) -> InsightsResponse:
     if result is None:
         raise HTTPException(status_code=404, detail="no data for that movie yet")
     return result
+
+
+@app.get("/similar", response_model=SimilarResponse, tags=["inference"])
+@limiter.limit("30/minute")
+def similar(
+    request: Request,
+    text: str,
+    k: int = 5,
+    _auth: None = Depends(_verify_api_key),
+) -> SimilarResponse:
+    """Top-k nearest reservoir reviews to `text` by TF-IDF cosine similarity.
+
+    Helps interpretability: "show me the closest review the model has seen."
+    Empty `hits` when the reservoir is empty; no 404 because the endpoint is
+    idempotent on cold start.
+    """
+    from moviesentiment.serve.similar import find_similar
+
+    if not text or len(text) > settings.max_text_length:
+        raise HTTPException(status_code=422, detail="text empty or exceeds max length")
+    hits = [SimilarHit(**h) for h in find_similar(text, k=k)]
+    return SimilarResponse(query=text, hits=hits)
 
 
 Instrumentator().instrument(app).expose(app)

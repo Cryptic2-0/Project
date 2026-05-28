@@ -97,3 +97,14 @@ class InsightsResponse(BaseModel):
     spoiler_share: float
     helpfulness_mean: float
     topics: list[str] = Field(default_factory=list)  # populated when BERTopic batch runs
+
+
+class SimilarHit(BaseModel):
+    text: str
+    label: str
+    score: float = Field(..., ge=0.0, le=1.0)
+
+
+class SimilarResponse(BaseModel):
+    query: str
+    hits: list[SimilarHit]

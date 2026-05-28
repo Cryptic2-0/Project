@@ -145,13 +145,18 @@ moviesentiment drift   # compares prod logs vs training distribution → HTML re
 | Endpoint | What it does |
 |---|---|
 | `POST /predict` | Sync batch inference (≤32 reviews/req, 60/min rate-limited) |
+| `POST /analyze` | v2 multi-task: sentiment + ABSA + emotion + spoiler + helpfulness in one pass (30/min) |
 | `POST /predict/async` | Queues to SQS; Lambda runs inference; result in DynamoDB |
 | `GET /predict/result/{job_id}` | Read async job state |
 | `POST /explain` | Per-token attribution via occlusion (opt-in, 10/min) |
+| `GET /similar?text=...&k=5` | Nearest reservoir reviews by TF-IDF cosine (30/min) |
+| `GET /insights/{movie_id}` | Aggregated per-movie multi-head insights |
 | `GET /healthz` `/readyz` `/version` | Standard ops endpoints |
 | `GET /metrics` | Prometheus scrape target |
 | `GET /sample` | Reservoir-sampler debug stats |
 | `GET /ui/` | Static frontend (terminal-style demo) |
+
+**Auth**: `/predict`, `/analyze`, and `/similar` honour `X-API-Key` against `MS_API_KEY`. Empty key (default) = demo mode, no auth.
 
 **Static frontend**: `frontend/index.html` is a self-contained single-page demo with a three-mode toggle (mock keyword classifier · live-auto via public `api.json` · custom IP paste), animated SVG architecture flow, and a live activity strip. Ships via GitHub Pages OR the same Fargate task at `/ui/`. Zero added AWS cost.
 
@@ -173,8 +178,13 @@ moviesentiment drift   # compares prod logs vs training distribution → HTML re
 | `docs/datasheet.md` | Gebru et al. template — IMDb 50K provenance, biases, distribution |
 | `docs/benchmarks.md` | Raw ONNX latency (single-call timing) |
 | `docs/loadtest.md` | End-to-end Locust load test reference numbers + bottleneck breakdown |
+| `docs/slos.md` | SLI/SLO/error-budget definitions for the live service |
+| `docs/runbook.md` | 9 on-call playbooks |
+| `docs/shadow_canary.md` | ECS + ALB shadow/canary deploy plan |
+| `docs/demo_script.md` | 3-minute Loom walkthrough |
 | `docs/grafana_cloud_setup.md` | One-time OTLP export setup |
-| `docs/future_improvements.md` | Deferred items (LitServe, SageMaker Serverless, multi-language, **v2 Review Intelligence multi-head**) |
+| `docs/future_improvements.md` | Deferred items (LitServe, SageMaker Serverless, multi-language) |
+| `final_report.md` | Full project build report (timeline, decisions, costs, code audit) |
 
 Build the PDF docs:
 

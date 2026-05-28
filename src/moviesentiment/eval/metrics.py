@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +16,16 @@ from sklearn.metrics import (
     ConfusionMatrixDisplay,
     PrecisionRecallDisplay,
     RocCurveDisplay,
+    brier_score_loss,
     classification_report,
     confusion_matrix,
 )
 
 _METRICS_DIR = Path("metrics")
+# CI threshold for the calibration regression gate. A Brier score above this
+# means the predicted probabilities have drifted from being well-calibrated;
+# `scripts/check_calibration.py` exits 1 to fail the build.
+BRIER_FAIL_THRESHOLD = 0.10
 
 
 def _save_and_log(fig: Figure, name: str) -> None:
@@ -62,6 +68,25 @@ def log_calibration_plot(y_true: pd.Series[Any], y_prob: np.ndarray[Any, Any]) -
     _save_and_log(fig, "calibration.png")
 
 
+def compute_and_log_brier(
+    y_true: pd.Series[Any] | np.ndarray[Any, Any],
+    y_prob: np.ndarray[Any, Any],
+) -> float:
+    """Compute Brier score on the positive-class probability and persist it.
+
+    Writes `metrics/brier.json` and logs the metric to MLflow. The CI gate
+    in `scripts/check_calibration.py` reads the JSON and fails the build
+    if `brier > BRIER_FAIL_THRESHOLD`. Lower is better; perfect = 0.0.
+    """
+    score = float(brier_score_loss(np.asarray(y_true), np.asarray(y_prob)))
+    _METRICS_DIR.mkdir(exist_ok=True)
+    (_METRICS_DIR / "brier.json").write_text(
+        json.dumps({"brier": score, "threshold": BRIER_FAIL_THRESHOLD})
+    )
+    mlflow.log_metric("brier", score)
+    return score
+
+
 def log_classification_report(y_true: pd.Series[Any], y_pred: np.ndarray[Any, Any]) -> None:
     """Log per-class precision/recall/F1 as MLflow metrics and a text artifact."""
     report_str = classification_report(y_true, y_pred, target_names=["negative", "positive"])
@@ -90,6 +115,7 @@ def log_all_eval(
         log_roc_curve(y_true, y_prob)
         log_pr_curve(y_true, y_prob)
         log_calibration_plot(y_true, y_prob)
+        compute_and_log_brier(y_true, y_prob)
 
 
 def slice_by_length(df: pd.DataFrame, preds: np.ndarray[Any, Any]) -> pd.DataFrame:

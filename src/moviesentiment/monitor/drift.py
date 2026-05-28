@@ -68,3 +68,27 @@ def drift_share(reference: Path, current: Path) -> float:
         return share
     except (KeyError, IndexError):
         return 0.0
+
+
+def label_drift(reference: Path, current: Path, label_col: str = "label") -> float:
+    """Concept-drift signal: total-variation distance between predicted-label shares.
+
+    Complements `drift_share`, which only inspects input features. A model can
+    sit on a stable input distribution and still produce a drifting output
+    distribution (concept drift) when the underlying mapping moves — e.g. a
+    new movie genre that the encoder happens to project to a different region.
+
+    Returns a value in [0, 1]. 0 = identical class proportions, 1 = disjoint.
+    A practical retrain trigger is `> 0.15` on a binary head; tune per task.
+    """
+    import pandas as pd
+
+    ref_df = pd.read_parquet(reference)
+    cur_df = pd.read_parquet(current)
+    if label_col not in ref_df.columns or label_col not in cur_df.columns:
+        return 0.0
+    ref_share = ref_df[label_col].value_counts(normalize=True)
+    cur_share = cur_df[label_col].value_counts(normalize=True)
+    labels = set(ref_share.index) | set(cur_share.index)
+    tv = 0.5 * sum(abs(ref_share.get(label, 0.0) - cur_share.get(label, 0.0)) for label in labels)
+    return float(tv)
