@@ -7,6 +7,8 @@
 [![v1 on HF](https://img.shields.io/badge/HF-v1%20DistilBERT%20INT8-yellow)](https://huggingface.co/Cryptic2-0/moviesentiment-distilbert-onnx-int8)
 [![v2 on HF](https://img.shields.io/badge/HF-v2%20Multi--task%20INT8-yellow)](https://huggingface.co/Cryptic2-0/moviesentiment-multitask-onnx-int8)
 
+> **Try it without cloning** — the v1 model has an inference widget on its HF page: paste a review, see the prediction. Direct link: [moviesentiment-distilbert-onnx-int8](https://huggingface.co/Cryptic2-0/moviesentiment-distilbert-onnx-int8) (scroll to "Inference API"). v2 multi-task isn't widget-compatible (5 heads need custom decoding) — use the local stack via [`docs/demo_walkthrough.md`](docs/demo_walkthrough.md).
+
 **Live demo**:
 
 > **Currently torn down for cost control** (verified 2026-05-29). The ECS Fargate service and Lambdas were scaled-to-zero after the build session. All artefacts remain:

@@ -4,6 +4,85 @@ All notable changes to MovieSentiment. Format follows [Keep a Changelog](https:/
 
 ---
 
+## [v3.3] — 2026-05-29
+
+CI / OSSF / HF metadata fix pass. Three GitHub-visible errors all
+cleared after default branch moved to `release/v3.2`.
+
+### Fixed
+
+- **CI build-image step** — DVC + S3 pull was failing with `403
+  Forbidden` because AWS keys had been rotated. Replaced with public
+  HuggingFace Hub pull (`hf download
+  Cryptic2-0/moviesentiment-distilbert-onnx-int8`). No auth required.
+- **CI `huggingface-cli` deprecated** — the new entry point is `hf`
+  (huggingface_hub 1.x rename). Updated the workflow.
+- **CI scrape tests** — 4 tests failed in CI with `MagicMock is not
+  JSON serializable` because they mocked `requests.Session.post` but
+  the v2.1 scrape rewrite switched to `.get`. Updated mocks. 139/139
+  tests pass.
+- **OSSF Scorecard "invalid repo path"** — the workflow trigger was
+  pinned to `push: branches: [main]`; Scorecard only runs on the
+  default branch. Default moved to `release/v3.2` in v3.2; updated
+  trigger.
+- **HuggingFace YAML metadata warning** — both repos showed "empty or
+  missing yaml metadata". `scripts/push_to_hf.py` now injects
+  frontmatter (`license`, `library_name`, `pipeline_tag`, `language`,
+  `tags`, `base_model`, `datasets`) before staging the README. v1 now
+  shows the inference widget on its HF page.
+
+### Changed
+
+- **AWS push gated behind `vars.AWS_ENABLED`** — ECR push +
+  `aws ecs update-service` only run when the repo variable is set to
+  `'true'` AND the push is on `release/v3.2`. CI passes while the ECS
+  service stays torn down. GHCR push stays unconditional. Re-enable
+  by setting the variable + providing fresh AWS_* secrets.
+- **Dockerfile** — dropped `COPY models/distilbert_onnx/` (FP32 v1 dir
+  was redundant; only weekly_bench used it). Saves ~256 MB image
+  size.
+- **README badges** — added a callout pointing at the HF inference
+  widget so interviewers can click instead of clone.
+- **CI / Scorecard triggers** — both workflows now target the
+  `release/v3.2` default branch.
+
+---
+
+## [v3.2] — 2026-05-29
+
+Doc consistency sweep. All surfaces aligned with current project state
+after keys rotated and AWS state verified.
+
+### Fixed
+
+- README coverage gate 75% -> 85%, cost block updated (today's
+  $0.37/mo storage-only, not the $6/mo Fargate target), removed stale
+  "LoRA adapters" / "spot instances" claims, frontend block honesty
+  pass.
+- Roadmap rewritten: v2.1 shipped items moved to `[x]` (auth,
+  /similar, calibration gate, label drift, adversarial, Streamlit
+  labeller, AWS Budget, HF Hub publish, demo + scaling + interview
+  prep docs).
+- CHANGELOG.md previously stopped at v2.1 — backfilled v2.2, v2.3,
+  v3.0, v3.1.
+- LaTeX (quickstart.tex, workflow.tex) coverage gate references 75%
+  -> 85%.
+- docs/future_improvements.md: v2 Review Intelligence marked SHIPPED
+  with HF URL (was "code skeleton, training pending").
+- final_report.md Appendix B item 1 resolved (live ENI IP) — service
+  is torn down per Appendix C.
+- .env cleared to template with commented-out lines (all keys rotated
+  post-session).
+
+### Added
+
+- Default GitHub branch moved to `release/v3.2` so the public repo
+  landing page reflects the released, stable state.
+- README docs index extended with `demo_walkthrough.md`,
+  `aws_teardown.md`, `interview_talking_points.md`, `CHANGELOG.md`.
+
+---
+
 ## [v3.1] — 2026-05-29
 
 Interview-prep + scaling documentation pass. No code changes.
