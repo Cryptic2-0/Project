@@ -211,6 +211,8 @@ moviesentiment drift   # compares prod logs vs training distribution → HTML re
 | `docs/demo_script.md` | 3-minute Loom walkthrough |
 | `docs/grafana_cloud_setup.md` | One-time OTLP export setup |
 | `docs/future_improvements.md` | Deferred items (LitServe, SageMaker Serverless, multi-language) |
+| `docs/scaling.md` | 4-tier scaling breakdown — Tier 0 ($0–6/mo) to Tier 4 (enterprise) |
+| `docs/interview_prep.md` | Exhaustive Q&A drill book (12 sections, every decision + curveball) |
 | `final_report.md` | Full project build report (timeline, decisions, costs, code audit) |
 
 Build the PDF docs:

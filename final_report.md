@@ -21,7 +21,9 @@
 | v2 INT8 ONNX (multi-task: sentiment + ABSA + emotion + spoiler + helpfulness) | https://huggingface.co/Cryptic2-0/moviesentiment-multitask-onnx-int8 |
 | Demo walkthrough | [`docs/demo_walkthrough.md`](docs/demo_walkthrough.md) |
 | AWS teardown to $0 | [`docs/aws_teardown.md`](docs/aws_teardown.md) |
-| Interview talking points | [`docs/interview_talking_points.md`](docs/interview_talking_points.md) |
+| Scaling tier breakdown | [`docs/scaling.md`](docs/scaling.md) |
+| Interview prep (exhaustive Q&A) | [`docs/interview_prep.md`](docs/interview_prep.md) |
+| Interview talking points (60-sec answers) | [`docs/interview_talking_points.md`](docs/interview_talking_points.md) |
 
 ---
 
