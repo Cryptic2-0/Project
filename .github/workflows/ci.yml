@@ -48,7 +48,7 @@ jobs:
             --ignore-vuln CVE-2026-27448 \
             --ignore-vuln CVE-2026-27459
       - name: Test
-        run: pytest -m "not slow" --cov=moviesentiment --cov-fail-under=75 -v
+        run: pytest -m "not slow" --cov=moviesentiment --cov-fail-under=85 -v
 
   build-image:
     needs: lint-test

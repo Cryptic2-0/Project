@@ -37,9 +37,23 @@ def test_drift_share_synthetic_drift(tmp_path: Path) -> None:
     assert share > 0.0, f"expected drift > 0, got {share}"
 
 
+def _have_evidently() -> bool:
+    try:
+        import evidently.legacy.metric_preset  # noqa: F401
+
+        return True
+    except ImportError:
+        try:
+            import evidently.metric_preset  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+
+@pytest.mark.skipif(not _have_evidently(), reason="evidently not installed")
 def test_drift_share_no_drift_when_identical(tmp_path: Path) -> None:
     """Same distribution on both sides should NOT register drift."""
-    pytest.importorskip("evidently.metric_preset")
     df = pd.DataFrame({"text": [f"review {i} text " * 5 for i in range(100)]})
     ref_p = tmp_path / "ref.parquet"
     cur_p = tmp_path / "cur.parquet"
@@ -48,3 +62,19 @@ def test_drift_share_no_drift_when_identical(tmp_path: Path) -> None:
 
     share = drift_share(ref_p, cur_p)
     assert share == 0.0, f"expected zero drift on identical data, got {share}"
+
+
+@pytest.mark.skipif(not _have_evidently(), reason="evidently not installed")
+def test_run_drift_report_writes_html(tmp_path: Path) -> None:
+    """Smoke-test run_drift_report end-to-end on tiny synthetic data."""
+    from moviesentiment.monitor.drift import run_drift_report
+
+    df = pd.DataFrame({"text": [f"review {i} text " * 5 for i in range(50)]})
+    ref_p = tmp_path / "ref.parquet"
+    cur_p = tmp_path / "cur.parquet"
+    df.to_parquet(ref_p)
+    df.to_parquet(cur_p)
+
+    out_path = run_drift_report(ref_p, cur_p, tmp_path / "out")
+    assert out_path.exists()
+    assert out_path.suffix == ".html"

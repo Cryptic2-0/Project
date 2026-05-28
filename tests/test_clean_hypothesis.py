@@ -18,7 +18,13 @@ def test_clean_text_never_crashes(text: str) -> None:
     # Whatever the input, output is a string, lowercased, and has no HTML/URL leftover
     assert isinstance(result, str)
     assert result == result.lower()
-    assert "<" not in result or ">" not in result  # tags stripped
+    # The regex strips substrings matching <[^>]+>, i.e. real tag-shaped tokens
+    # like <p>, <a href>, </div>. Lone angle-bracket pairs like "<>" (empty
+    # content) don't match the regex and pass through unchanged — that is
+    # intended, not a bug.
+    import re
+
+    assert re.search(r"<[^>]+>", result) is None  # no tag-shaped substring
 
 
 @given(st.text(min_size=11, max_size=500).filter(lambda s: s.strip()))

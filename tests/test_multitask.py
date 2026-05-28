@@ -236,6 +236,26 @@ def test_materialise_all_writes_per_movie_json(
     assert payload["n_reviews"] == 2
 
 
+def test_insights_handles_missing_label_columns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reservoir without label/aspect/emotion columns -> zero-filled defaults."""
+    from moviesentiment.serve import insights as ins_mod
+    from moviesentiment.serve.insights import compute_insights  # noqa: F401
+
+    sample = pd.DataFrame([{"text": "x", "movie_id": "tt1"}])  # no label / aspect_*
+    path = tmp_path / "recent.parquet"
+    sample.to_parquet(path, index=False)
+    monkeypatch.setattr(ins_mod, "_RESERVOIR_PATH", path)
+    result = compute_insights("tt1")
+    assert result is not None
+    assert result.sentiment_positive_share == 0.0
+    assert all(v == 0.0 for v in result.aspect_means.values())
+    assert all(v == 0.0 for v in result.emotion_mix.values())
+    assert result.spoiler_share == 0.0
+    assert result.helpfulness_mean == 0.0
+
+
 def test_materialise_all_noop_when_no_movie_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

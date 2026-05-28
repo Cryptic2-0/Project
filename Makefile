@@ -19,7 +19,7 @@ serve:
 	uvicorn moviesentiment.serve.api:app --host 0.0.0.0 --port 8000 --reload
 
 test:
-	pytest -m "not slow" --cov=moviesentiment --cov-fail-under=75 -v
+	pytest -m "not slow" --cov=moviesentiment --cov-fail-under=85 -v
 
 test-slow:
 	pytest -m slow -v

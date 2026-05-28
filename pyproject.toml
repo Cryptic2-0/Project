@@ -161,5 +161,4 @@ omit = [
     "src/moviesentiment/monitor/perf_estimate.py",
     "src/moviesentiment/eval/metrics.py",
     "src/moviesentiment/serve/tracing.py",
-    "src/moviesentiment/cli.py",
 ]

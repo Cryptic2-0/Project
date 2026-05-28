@@ -23,8 +23,14 @@ def _add_text_features(df: pd.DataFrame) -> pd.DataFrame:
 def run_drift_report(reference: Path, current: Path, out_dir: Path) -> Path:
     """Generate an Evidently DataDrift HTML report. Returns the report path."""
     import pandas as pd
-    from evidently.metric_preset import DataDriftPreset
-    from evidently.report import Report
+
+    try:
+        from evidently.metric_preset import DataDriftPreset
+        from evidently.report import Report
+    except ImportError:
+        # Evidently 0.7+ relocated the legacy API under evidently.legacy.*.
+        from evidently.legacy.metric_preset import DataDriftPreset
+        from evidently.legacy.report import Report
 
     ref_df = _add_text_features(pd.read_parquet(reference)[["text"]])
     cur_df = _add_text_features(pd.read_parquet(current)[["text"]])
@@ -42,8 +48,14 @@ def run_drift_report(reference: Path, current: Path, out_dir: Path) -> Path:
 def drift_share(reference: Path, current: Path) -> float:
     """Return the share of drifted columns (0.0–1.0) without writing a report."""
     import pandas as pd
-    from evidently.metric_preset import DataDriftPreset
-    from evidently.report import Report
+
+    try:
+        from evidently.metric_preset import DataDriftPreset
+        from evidently.report import Report
+    except ImportError:
+        # Evidently 0.7+ relocated the legacy API under evidently.legacy.*.
+        from evidently.legacy.metric_preset import DataDriftPreset
+        from evidently.legacy.report import Report
 
     ref_df = _add_text_features(pd.read_parquet(reference)[["text"]])
     cur_df = _add_text_features(pd.read_parquet(current)[["text"]])
