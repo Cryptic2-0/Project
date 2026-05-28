@@ -4,6 +4,103 @@ All notable changes to MovieSentiment. Format follows [Keep a Changelog](https:/
 
 ---
 
+## [v3.1] — 2026-05-29
+
+Interview-prep + scaling documentation pass. No code changes.
+
+### Added
+
+- **`docs/scaling.md`** — 4-tier scaling ladder. Tier 0 ($0–6/mo, today)
+  → Tier 1 (high-end single GPU) → Tier 2 (small team prod, ~$250–500/mo)
+  → Tier 3 (mid-size company, ~$2k/mo) → Tier 4 (enterprise, $2–10M/yr).
+  Cross-tier table of what stays the same vs what scales.
+- **`docs/interview_prep.md`** — 12-section exhaustive Q&A drill book.
+  Every decision + likely interviewer follow-up + curveballs.
+  ~50 Q&A pairs covering architecture, cost choices, model & data,
+  production engineering, observability, security, testing, build
+  journey, behavioral.
+
+### Changed
+
+- README + `final_report.md` link to the two new docs.
+
+---
+
+## [v3.0] — 2026-05-29
+
+Project marked **COMPLETE**. Models published to HuggingFace Hub; AWS
+scaled to storage-only (~$0.37/mo); demo + teardown docs added.
+
+### Added
+
+- **`docs/demo_walkthrough.md`** — full step-by-step to run the model
+  + frontend UI + Grafana stack locally. Replaces the now-stale "live
+  AWS URL" demo path. Includes troubleshooting + interview-flow
+  checklist.
+- **`docs/aws_teardown.md`** — step-by-step to drive AWS spend to $0/mo.
+  HF Hub is the source of truth for ONNX models, so deleting S3 + ECR
+  is safe. Includes a 60-second "$0 right now" recipe.
+
+### Changed
+
+- `final_report.md`: marked COMPLETE (v3.0); top-of-file public-artefacts
+  table with HF URLs + demo + teardown doc links.
+- README.md: pointer to demo_walkthrough.md + aws_teardown.md from the
+  Quickstart block.
+
+### Removed
+
+- Deleted `models/distilbert_multitask_onnx/model_fp32.onnx` (253 MB,
+  redundant — INT8 is the production artefact; FP32 was only the
+  intermediate from the legacy TorchScript exporter).
+
+---
+
+## [v2.3] — 2026-05-29
+
+HuggingFace Hub publish of v1 + v2 ONNX models. Replaces S3 as the
+public-facing artefact store.
+
+### Added
+
+- **`scripts/push_to_hf.py`** — idempotent push of both INT8 ONNX
+  bundles to HF Hub. Stages `docs/model_card.md` as the repo README.
+  Skips FP32 ONNX to save bandwidth.
+- **`make hf-push`** target wrapping the script.
+- README: HF badges + quickstart now offers HuggingFace as the primary
+  artefact source (Option A); DVC + S3 as the alternative.
+
+### Published
+
+- https://huggingface.co/Cryptic2-0/moviesentiment-distilbert-onnx-int8
+- https://huggingface.co/Cryptic2-0/moviesentiment-multitask-onnx-int8
+
+---
+
+## [v2.2] — 2026-05-29
+
+Admin-key AWS audit pass + CloudWatch retention bump. No code changes
+to source.
+
+### Changed
+
+- **CloudWatch retention** on `/ecs/moviesentiment` bumped from unset
+  (never expire) to **90 days** via
+  `aws logs put-retention-policy --retention-in-days 90`. Verified.
+- Appendix C of `final_report.md` finalised with full verified AWS state
+  (SQS empty, DynamoDB empty, EventBridge empty, Lambda empty in
+  ap-southeast-2 + us-east-1, S3 + ECR + task-def family alive).
+
+### Documented
+
+- Permission gap inventory: `moviesentiment-ci` IAM user is CI-scope
+  only; lacks `logs:PutRetentionPolicy`, `sqs:ListQueues`,
+  `dynamodb:ListTables`, `events:ListRules`, `s3:ListAllMyBuckets`.
+  `moviesentiment-admin` user created for the audit and rotated within
+  the same session.
+
+---
+
 ## [v2.1] — 2026-05-29
 
 Portfolio-hardening pass: correctness fixes, shared-secret auth, ops docs,

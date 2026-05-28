@@ -632,7 +632,7 @@ A successful round-trip through the system, top to bottom, is:
 \item \texttt{dvc add models/distilbert\_onnx\_int8/} -- track the ONNX artefacts,
       then \texttt{dvc push} to S3.
 \item \texttt{git push} -- triggers \texttt{ci.yml}: ruff, black, mypy, bandit,
-      pip-audit, pytest with the 75\% coverage gate.
+      pip-audit, pytest with the 85\% coverage gate, calibration regression gate.
 \item On \texttt{main}: the same workflow pulls the DVC artefacts, builds the
       ARM64 image, pushes to ECR and GHCR, and force-deploys ECS.
 \item Fargate boots a new task; the lifespan loads the INT8 ONNX model; the

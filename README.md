@@ -157,7 +157,7 @@ moviesentiment drift   # compares prod logs vs training distribution → HTML re
 
 ## CI/CD
 
-- **`ci.yml`**: lint (ruff + black), type-check (`mypy src tests`), test (pytest + hypothesis, coverage gate **75%**), Docker build (ARM64) → push to **GHCR + AWS ECR** → `aws ecs update-service --force-new-deployment` rolls Fargate to new image.
+- **`ci.yml`**: lint (ruff + black), type-check (`mypy src tests`), test (pytest + hypothesis, coverage gate **85%**), bandit + pip-audit security scans, calibration regression gate, Docker build (ARM64) → push to **GHCR + AWS ECR** → `aws ecs update-service --force-new-deployment` rolls Fargate to new image.
 - **`scorecard.yml`**: OSSF Scorecard supply-chain security scan, weekly.
 - **`weekly_bench.yml`**: pulls DVC ONNX artifact, runs latency benchmark + slow ONNX-export e2e test, uploads `bench.txt`.
 - **`dependabot.yml`**: weekly pip + GitHub Actions + Docker base image updates, grouped.
@@ -185,13 +185,13 @@ moviesentiment drift   # compares prod logs vs training distribution → HTML re
 
 **Auth**: `/predict`, `/analyze`, and `/similar` honour `X-API-Key` against `MS_API_KEY`. Empty key (default) = demo mode, no auth.
 
-**Static frontend**: `frontend/index.html` is a self-contained single-page demo with a three-mode toggle (mock keyword classifier · live-auto via public `api.json` · custom IP paste), animated SVG architecture flow, and a live activity strip. Ships via GitHub Pages OR the same Fargate task at `/ui/`. Zero added AWS cost.
+**Static frontend**: `frontend/index.html` is a self-contained single-page demo with a three-mode toggle (mock keyword classifier · live-auto via public `api.json` · custom IP paste), animated SVG architecture flow, and a live activity strip. Served at `/ui/` by the same FastAPI process locally; bundled into the Fargate image when deployed. Zero added cost.
 
 **Observability**: structured logs via `structlog` with request-id correlation (`x-request-id` header round-trip), OpenTelemetry traces exported to Grafana Cloud's free tier (see `docs/grafana_cloud_setup.md`), Prometheus metrics for prediction confidence + class distribution, NannyML CBPE for label-free F1 estimation.
 
 **Production sampling**: replaced `random.random() < 0.1` with reservoir sampling (Vitter's Algorithm R, k=1000) for guaranteed uniform coverage at fixed memory.
 
-**Cost**: ARM64 Graviton Fargate, single 0.25 vCPU / 1 GB task. ~$6/mo. SageMaker training uses spot instances (70-90% off) and LoRA adapters (~3 MB vs 250 MB full FT). All monitoring is free tier.
+**Cost (today, v3.1)**: **~$0.37/mo** — storage only (ECR + S3 + CloudWatch). ECS service + Lambdas torn down post-build for cost control; redeploy is one `create-service` away (see [`docs/runbook.md`](docs/runbook.md) §3). Live serving target is ARM64 Graviton Fargate, single 0.25 vCPU / 1 GB task, ~$6/mo when running. SageMaker training was on-demand `ml.g4dn.xlarge` (~$0.75 one-time per model, spot quota was unavailable). Full breakdown by tier in [`docs/scaling.md`](docs/scaling.md); zero-cost teardown in [`docs/aws_teardown.md`](docs/aws_teardown.md).
 
 ---
 
@@ -208,12 +208,16 @@ moviesentiment drift   # compares prod logs vs training distribution → HTML re
 | `docs/slos.md` | SLI/SLO/error-budget definitions for the live service |
 | `docs/runbook.md` | 9 on-call playbooks |
 | `docs/shadow_canary.md` | ECS + ALB shadow/canary deploy plan |
-| `docs/demo_script.md` | 3-minute Loom walkthrough |
+| `docs/demo_walkthrough.md` | **Step-by-step to run model + frontend locally** (start here for demo) |
+| `docs/demo_script.md` | 3-minute Loom voiceover script |
+| `docs/aws_teardown.md` | Drive AWS spend to $0/mo (delete ECR + S3) |
 | `docs/grafana_cloud_setup.md` | One-time OTLP export setup |
-| `docs/future_improvements.md` | Deferred items (LitServe, SageMaker Serverless, multi-language) |
+| `docs/future_improvements.md` | Remaining deferred items |
 | `docs/scaling.md` | 4-tier scaling breakdown — Tier 0 ($0–6/mo) to Tier 4 (enterprise) |
 | `docs/interview_prep.md` | Exhaustive Q&A drill book (12 sections, every decision + curveball) |
+| `docs/interview_talking_points.md` | 60-second answers per topic |
 | `final_report.md` | Full project build report (timeline, decisions, costs, code audit) |
+| `CHANGELOG.md` | Per-version delta from v0.0-scaffold through v3.1 |
 
 Build the PDF docs:
 
@@ -238,12 +242,26 @@ pwsh scripts/build_docs.ps1
 
 ## Roadmap
 
-- [ ] **v2 Review Intelligence** — multi-head DistilBERT: sentiment + aspect-based sentiment (acting / plot / visuals / pacing / sound) + Ekman emotion + spoiler detection + helpfulness regression. One forward pass, same INT8 ONNX session, ~$0.24 one-time training cost. Service combination no free portfolio-tier API offers. See `docs/future_improvements.md`.
-- [ ] Multi-language support (es, fr) via XLM-R — deferred
-- [ ] LitServe drop-in if load-test shows queueing — deferred
-- [ ] SageMaker Serverless comparison (Fargate vs Serverless cost-per-million) — deferred
-- [ ] Active learning loop on low-confidence predictions
-- [ ] A/B testing harness with gradual rollout
+### Shipped
+
+- [x] **v2 Review Intelligence** — multi-head DistilBERT (sentiment + 5-aspect ABSA + Ekman emotion + spoiler + helpfulness) in one ONNX forward pass. Trained on SageMaker (~$0.75 on-demand). Live at [`POST /analyze`](docs/demo_walkthrough.md).
+- [x] **API key auth** via `MS_API_KEY` + `X-API-Key` header (v2.1).
+- [x] **`/similar` endpoint** — TF-IDF nearest-neighbour over the reservoir (v2.1).
+- [x] **Calibration regression gate** in CI (Brier score, v2.1).
+- [x] **Label-drift detector** (`monitor/drift.py::label_drift`, v2.1).
+- [x] **Adversarial robustness tests** (v2.1).
+- [x] **Streamlit active-learning labeller** (`apps/annotate/`, v2.1).
+- [x] **AWS Budget setup script** at $13/mo ceiling (v2.1).
+- [x] **HuggingFace Hub publish** of v1 + v2 INT8 ONNX (v2.3).
+- [x] **Demo + teardown + scaling + interview-prep docs** (v3.0, v3.1).
+
+### Deferred
+
+- [ ] Multi-language support (es, fr) via XLM-R — only worth it for multilingual roles.
+- [ ] LitServe drop-in if load-test shows queueing — pending real-traffic signal.
+- [ ] SageMaker Serverless comparison (Fargate vs Serverless cost-per-million).
+- [ ] A/B testing harness with gradual rollout (plan in [`docs/shadow_canary.md`](docs/shadow_canary.md); blocked by ALB cost ceiling).
+- [ ] ABSA teacher distillation from `yangheng/deberta-v3-base-absa-v1.1` — v2 aspect head is random-init until this lands.
 
 ---
 

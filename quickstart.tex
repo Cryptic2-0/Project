@@ -442,12 +442,12 @@ python -m moviesentiment.cli drift
 % ----------------------------------------------------------------------------
 
 \begin{lstlisting}
-make test          # fast tests, coverage gate at 75%
+make test          # fast tests, coverage gate at 85%
 make test-slow     # ONNX export e2e tests (minutes long)
 \end{lstlisting}
 
 \noindent Behind the scenes \texttt{make test} runs
-\texttt{pytest -m "not slow" --cov=moviesentiment --cov-fail-under=75 -v}. A failing
+\texttt{pytest -m "not slow" --cov=moviesentiment --cov-fail-under=85 -v}. A failing
 coverage gate is a real failure -- it will turn CI red.
 
 \subsection{Linting and Type Checking}
@@ -542,7 +542,7 @@ Docker compose hangs on the API. & First build downloads the model layer; expect
                                    a one-time slow build. \\
 \texttt{pytest} reports coverage failure. & You have probably touched a serving
                                             module without updating its tests --
-                                            coverage gate is 75\%. \\
+                                            coverage gate is 85\%. \\
 \bottomrule
 \end{longtable}
 

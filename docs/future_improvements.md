@@ -69,9 +69,9 @@ If the budget allows one of these and you can only ship one before an interview 
 
 ---
 
-## v2 — Review Intelligence (multi-task expansion)
+## v2 — Review Intelligence (multi-task expansion) — **SHIPPED 2026-05-28** (tag `v2.0`)
 
-**Status**: code skeleton landed (commit on `main`); training run pending · ~$0.24 one-time + $0/mo · interview value 5/5
+**Status**: COMPLETE. Five-head DistilBERT trained, INT8 ONNX exported, deployed at `POST /analyze`, model published at https://huggingface.co/Cryptic2-0/moviesentiment-multitask-onnx-int8 · ~$0.75 one-time (on-demand `ml.g4dn.xlarge`, spot quota was unavailable) + $0/mo · interview value 5/5
 
 **What is in the repo now**
 - `src/moviesentiment/models/multitask.py` — shared-encoder DistilBERT with five heads.
