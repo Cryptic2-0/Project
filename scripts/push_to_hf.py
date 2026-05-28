@@ -35,6 +35,47 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _hf_frontmatter(repo_tag: str) -> str:
+    """HF YAML metadata block for the model card.
+
+    Without this HF logs a "empty or missing yaml metadata" warning on the
+    repo page. The frontmatter is rendered as repo tags + license + library +
+    pipeline + dataset chips on the model page.
+    """
+    if repo_tag == "v1":
+        pipeline = "text-classification"
+        tags_extra = ["sentiment-analysis", "imdb"]
+    else:
+        # v2 multi-task isn't a vanilla pipeline; "feature-extraction" gates
+        # the inference widget off (custom decoding required).
+        pipeline = "feature-extraction"
+        tags_extra = [
+            "sentiment-analysis",
+            "aspect-based-sentiment-analysis",
+            "emotion-classification",
+            "spoiler-detection",
+            "helpfulness-regression",
+            "multi-task",
+            "imdb",
+        ]
+    tags = ["onnx", "int8", "quantized", "distilbert", *tags_extra]
+    tag_yaml = "\n".join(f"  - {t}" for t in tags)
+    return (
+        "---\n"
+        "license: mit\n"
+        "library_name: onnxruntime\n"
+        f"pipeline_tag: {pipeline}\n"
+        "language:\n"
+        "  - en\n"
+        "tags:\n"
+        f"{tag_yaml}\n"
+        "datasets:\n"
+        "  - stanfordnlp/imdb\n"
+        "base_model: distilbert-base-uncased\n"
+        "---\n\n"
+    )
+
+
 def _push(
     folder: Path,
     repo_id: str,
@@ -42,6 +83,7 @@ def _push(
     private: bool,
     commit_message: str,
     model_card: Path | None,
+    repo_tag: str,
 ) -> None:
     from huggingface_hub import HfApi
 
@@ -49,10 +91,12 @@ def _push(
     api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True, private=private)
 
     # Stage the README from docs/model_card.md so HF renders it as the repo
-    # landing page. HF requires README.md at repo root.
+    # landing page. HF requires README.md at repo root + YAML frontmatter.
     if model_card and model_card.exists():
         staged_readme = folder / "README.md"
-        staged_readme.write_text(model_card.read_text(encoding="utf-8"), encoding="utf-8")
+        frontmatter = _hf_frontmatter(repo_tag)
+        body = model_card.read_text(encoding="utf-8")
+        staged_readme.write_text(frontmatter + body, encoding="utf-8")
 
     api.upload_folder(
         folder_path=str(folder),
@@ -103,7 +147,7 @@ def main() -> int:
         if not folder.exists():
             print(f"SKIP {tag}: {folder} not found", file=sys.stderr)
             continue
-        _push(folder, repo_id, args.token, args.private, message, model_card)
+        _push(folder, repo_id, args.token, args.private, message, model_card, repo_tag=tag)
 
     return 0
 

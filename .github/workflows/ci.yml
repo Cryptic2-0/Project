@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, release/v3.2]
   pull_request:
   workflow_call:
 
@@ -68,17 +68,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install uv + dvc
-        run: pip install uv && uv pip install --system dvc[s3]
+      - name: Install uv + huggingface_hub
+        run: pip install uv && uv pip install --system huggingface_hub
 
-      - name: Pull ONNX models from DVC
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - name: Pull v1 INT8 ONNX from HuggingFace Hub
+        # HF is the public source of truth (v2.3+). No auth needed — repo
+        # is public. Replaces the previous DVC + S3 pull which required
+        # AWS_ACCESS_KEY_ID to still be valid in repo secrets.
+        # The CLI was renamed `huggingface-cli` -> `hf` in huggingface_hub
+        # 1.x; use the new entry point.
         run: |
-          dvc remote modify --local s3remote access_key_id "$AWS_ACCESS_KEY_ID"
-          dvc remote modify --local s3remote secret_access_key "$AWS_SECRET_ACCESS_KEY"
-          dvc pull models/distilbert_onnx_int8.dvc models/distilbert_onnx.dvc
+          hf download Cryptic2-0/moviesentiment-distilbert-onnx-int8 \
+            --local-dir models/distilbert_onnx_int8
 
       - uses: docker/login-action@v3
         with:
@@ -86,8 +87,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # AWS push + ECS redeploy paused in v3.x — the ECS service is torn
+      # down for cost control (Appendix C in final_report.md). Re-enable by
+      # un-gating the AWS_ENABLED env var and providing fresh
+      # AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY secrets when the service
+      # is redeployed. GHCR push stays on so the image is always available.
       - name: Configure AWS credentials
-        if: github.ref == 'refs/heads/main'
+        if: vars.AWS_ENABLED == 'true' && github.ref == 'refs/heads/release/v3.2'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -95,7 +101,7 @@ jobs:
           aws-region: ap-southeast-2
 
       - name: Login to ECR
-        if: github.ref == 'refs/heads/main'
+        if: vars.AWS_ENABLED == 'true' && github.ref == 'refs/heads/release/v3.2'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Lowercase repo name
@@ -113,18 +119,16 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/release/v3.2' || github.ref == 'refs/heads/main' }}
           platforms: linux/arm64
           build-args: |
             GIT_SHA=${{ github.sha }}
           tags: |
             ghcr.io/${{ env.REPO_LC }}:${{ github.sha }}
             ghcr.io/${{ env.REPO_LC }}:latest
-            375259955411.dkr.ecr.ap-southeast-2.amazonaws.com/moviesentiment:${{ github.sha }}
-            375259955411.dkr.ecr.ap-southeast-2.amazonaws.com/moviesentiment:latest
 
       - name: Force ECS redeploy
-        if: github.ref == 'refs/heads/main'
+        if: vars.AWS_ENABLED == 'true' && github.ref == 'refs/heads/release/v3.2'
         continue-on-error: true
         run: |
           aws ecs update-service \

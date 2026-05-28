@@ -25,7 +25,7 @@ def _edge(review_id: str, rating: int | None, text: str) -> dict[str, object]:
     }
 
 
-def _mock_post(edges: list[dict[str, object]], has_next: bool = False) -> MagicMock:
+def _mock_get(edges: list[dict[str, object]], has_next: bool = False) -> MagicMock:
     mock = MagicMock()
     mock.raise_for_status.return_value = None
     mock.json.return_value = {
@@ -69,10 +69,7 @@ def test_neutral_ratings_are_dropped(tmp_parquet: Path) -> None:
         _edge("rw004", 6, "OK"),
         _edge("rw005", None, "No rating"),
     ]
-    with (
-        patch("requests.Session.get"),
-        patch("requests.Session.post", return_value=_mock_post(edges)),
-    ):
+    with patch("requests.Session.get", return_value=_mock_get(edges)):
         n = scrape_reviews(movie_ids=["tt0111161"], out_path=tmp_parquet, source="live")
 
     assert n == 2
@@ -85,10 +82,7 @@ def test_label_assignment(tmp_parquet: Path) -> None:
         _edge("pos", 8, "Great"),
         _edge("neg", 2, "Awful"),
     ]
-    with (
-        patch("requests.Session.get"),
-        patch("requests.Session.post", return_value=_mock_post(edges)),
-    ):
+    with patch("requests.Session.get", return_value=_mock_get(edges)):
         scrape_reviews(movie_ids=["tt0111161"], out_path=tmp_parquet, source="live")
 
     df = pd.read_parquet(tmp_parquet)
@@ -98,10 +92,7 @@ def test_label_assignment(tmp_parquet: Path) -> None:
 
 def test_live_output_schema(tmp_parquet: Path) -> None:
     edges = [_edge("rw999", 8, "Great film")]
-    with (
-        patch("requests.Session.get"),
-        patch("requests.Session.post", return_value=_mock_post(edges)),
-    ):
+    with patch("requests.Session.get", return_value=_mock_get(edges)):
         scrape_reviews(movie_ids=["tt9999999"], out_path=tmp_parquet, source="live")
 
     df = pd.read_parquet(tmp_parquet)
@@ -114,10 +105,7 @@ def test_graphql_error_raises(tmp_parquet: Path) -> None:
     mock = MagicMock()
     mock.raise_for_status.return_value = None
     mock.json.return_value = {"errors": [{"message": "PersistedQueryNotFound"}]}
-    with (
-        patch("requests.Session.get"),
-        patch("requests.Session.post", return_value=mock),
-    ):
+    with patch("requests.Session.get", return_value=mock):
         with pytest.raises(RuntimeError, match="PersistedQueryNotFound"):
             scrape_reviews(movie_ids=["tt0111161"], out_path=tmp_parquet, source="live")
 
