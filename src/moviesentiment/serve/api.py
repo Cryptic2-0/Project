@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -57,6 +57,19 @@ engine: InferenceEngine | None = None
 multitask_engine: MultiTaskInferenceEngine | None = None
 sampler = ReservoirSampler(k=1000)
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Reject the request when MS_API_KEY is set and the header doesn't match.
+
+    Empty/unset MS_API_KEY = demo mode, no auth. Production sets MS_API_KEY and
+    clients send `X-API-Key: <value>`. Mismatched or missing key -> 401.
+    """
+    expected = settings.api_key
+    if not expected:
+        return
+    if not x_api_key or x_api_key != expected:
+        raise HTTPException(status_code=401, detail="invalid or missing api key")
 
 
 @asynccontextmanager
@@ -139,7 +152,11 @@ def readyz() -> HealthResponse:
 
 @app.post("/predict", response_model=PredictResponse, tags=["inference"])
 @limiter.limit("60/minute")
-def predict(request: Request, req: PredictRequest) -> PredictResponse:
+def predict(
+    request: Request,
+    req: PredictRequest,
+    _auth: None = Depends(_verify_api_key),
+) -> PredictResponse:
     if engine is None:
         raise HTTPException(status_code=503, detail="model not loaded")
     if len(req.texts) > settings.max_batch_size:
@@ -221,6 +238,7 @@ def analyze(
     request: Request,
     req: AnalyzeRequest,
     movie_id: str | None = None,
+    _auth: None = Depends(_verify_api_key),
 ) -> AnalyzeResponse:
     """v2 multi-task analyse: sentiment + ABSA + emotion + spoiler + helpfulness.
 
@@ -272,9 +290,14 @@ setup_tracing(app)
 
 # Async inference endpoints (SQS+Lambda). Returns 503 if MS_SQS_QUEUE_URL+MS_JOBS_TABLE
 # are not set, so local dev works without AWS plumbing.
-from moviesentiment.serve.async_api import async_router  # noqa: E402
+# Defensive import: if async_api or any of its deps fails to load (e.g. boto3 missing
+# in a minimal local install) the rest of the app must still come up.
+try:
+    from moviesentiment.serve.async_api import async_router  # noqa: E402
 
-app.include_router(async_router)
+    app.include_router(async_router)
+except Exception as exc:  # noqa: BLE001
+    log.warning("async_router_unavailable", error=str(exc))
 
 # Optional: serve the static frontend from the same Fargate task. Mounted last so it
 # doesn't shadow JSON routes. Skipped silently if frontend/index.html isn't bundled.

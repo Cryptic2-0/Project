@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # takeover. Default empty = main; set MS_HF_REVISION in CI to the resolved commit.
     hf_revision: str = ""
 
+    # Shared-secret API key for /predict + /analyze. Empty (default) = unauthenticated
+    # demo mode, preserving prior behaviour. Set MS_API_KEY in production; clients send
+    # it via `X-API-Key: <value>`. Mismatched / missing key -> 401.
+    api_key: str = ""
+
     model_config = {"env_prefix": "MS_", "env_file": ".env", "extra": "ignore"}
 
     def cors_origins_list(self) -> list[str]:

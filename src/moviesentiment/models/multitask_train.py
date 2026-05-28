@@ -213,6 +213,7 @@ def train_multitask() -> None:
         model.train()
         step = 0
         running = 0.0
+        window_steps = 0
         for _epoch in range(epochs):
             for batch in loader:
                 batch = {k: v.to(device) for k, v in batch.items()}
@@ -234,16 +235,19 @@ def train_multitask() -> None:
                 sched.step()
                 running += float(out.loss.item())
                 step += 1
+                window_steps += 1
                 if step % 50 == 0:
                     mlflow.log_metric("loss", running / 50, step=step)
                     running = 0.0
+                    window_steps = 0
 
         save_dir = settings.model_dir / "distilbert_multitask"
         save_dir.mkdir(parents=True, exist_ok=True)
         torch.save(model.state_dict(), save_dir / "model.pt")
         tokenizer.save_pretrained(str(save_dir))
         Path("metrics/multitask.json").parent.mkdir(exist_ok=True)
+        final_loss_avg = (running / window_steps) if window_steps > 0 else 0.0
         Path("metrics/multitask.json").write_text(
-            json.dumps({"steps": step, "loss_avg": running / max(step % 50, 1)})
+            json.dumps({"steps": step, "loss_avg": final_loss_avg})
         )
         print(f"Saved multi-task checkpoint to {save_dir}")

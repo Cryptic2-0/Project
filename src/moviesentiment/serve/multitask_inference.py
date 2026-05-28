@@ -87,6 +87,10 @@ class MultiTaskInferenceEngine:
             raise FileNotFoundError(f"multi-task ONNX not at {onnx_path}")
         return cls(onnx_path, d)
 
+    # Multi-task was trained with max_length=256 (see params.yaml::multitask).
+    # Inference matches so the model never sees positions it didn't train on.
+    _MAX_LENGTH = 256
+
     def analyze(self, text: str) -> AnalyzeResponse:
         import numpy as np
 
@@ -95,7 +99,7 @@ class MultiTaskInferenceEngine:
             return_tensors="np",
             padding=True,
             truncation=True,
-            max_length=512,
+            max_length=self._MAX_LENGTH,
         )
         outputs = self._session.run(None, dict(enc))
         out_names = [o.name for o in self._session.get_outputs()]

@@ -1,12 +1,14 @@
 # syntax=docker/dockerfile:1.6
 # Stage 1: build deps
+# Only base deps land in the serving image. The .[train] extras (sagemaker,
+# boto3-train, peft, accelerate) are training-only and add ~150 MB to no use
+# at serve time; SageMaker installs them inside its own container.
 FROM python:3.11-slim AS builder
 RUN pip install --no-cache-dir uv
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src/ ./src/
-RUN uv pip install --system --no-cache ".[train]" \
-    && uv pip install --system --no-cache .
+RUN uv pip install --system --no-cache .
 
 # Stage 2: runtime
 FROM python:3.11-slim AS runtime

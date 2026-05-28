@@ -58,8 +58,9 @@ def test_occlusion_ranks_keyword_first_when_drop_flips_label() -> None:
     )
     assert base.label == "positive"
     assert attrs[0][0] == "masterpiece"
-    # Flipped-label delta sums both confidences -> > 1.0.
-    assert attrs[0][1] > 1.0
+    # Stub: baseline.confidence=0.95 (positive), drop.confidence=0.55 (negative).
+    # P_drop(positive) = 1 - 0.55 = 0.45 → delta = 0.95 - 0.45 = 0.50.
+    assert abs(attrs[0][1] - 0.50) < 1e-6
 
 
 def test_occlusion_same_label_uses_confidence_delta() -> None:

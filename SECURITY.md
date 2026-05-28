@@ -23,7 +23,7 @@ This is a portfolio MLOps demo with a public-internet API. We defend against:
 
 ## Out of scope
 
-- Multi-tenant authorization. The API is intentionally unauthenticated for the public demo. Add OPA / JWT before any non-demo use.
+- Multi-tenant authorization. The API supports a shared-secret API key via `MS_API_KEY` + `X-API-Key` header (disabled by default for the public demo). Multi-tenant scope / per-user quotas / OAuth still require OPA / JWT before any non-demo use.
 - Side-channel attacks on the ONNX model (membership inference, model extraction). Realistic for higher-stakes models; not addressed here.
 - Cost-control on the AWS account at large. Budget alarms are the operator's responsibility.
 
@@ -32,6 +32,7 @@ This is a portfolio MLOps demo with a public-internet API. We defend against:
 ```bash
 MS_CORS_ALLOW_ORIGINS=https://cryptic2-0.github.io
 MS_HF_REVISION=<exact-commit-sha-of-distilbert-base-uncased>
+MS_API_KEY=<generated-shared-secret>     # /predict + /analyze require X-API-Key
 MS_ENV=prod
 OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
 OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <token>

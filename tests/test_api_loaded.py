@@ -76,3 +76,32 @@ def test_explain_happy_path_returns_attributions(
 def test_explain_rejects_oversize_text(client_with_engine: TestClient) -> None:
     r = client_with_engine.post("/explain", json={"text": "x" * 6000, "top_k": 5})
     assert r.status_code == 422
+
+
+def test_predict_unauth_when_api_key_set(
+    monkeypatch: pytest.MonkeyPatch, client_with_engine: TestClient
+) -> None:
+    from moviesentiment.serve import api as api_mod
+
+    monkeypatch.setattr(api_mod.settings, "api_key", "secret-token")
+    r = client_with_engine.post("/predict", json={"texts": ["a film"]})
+    assert r.status_code == 401
+
+
+def test_predict_ok_with_matching_api_key(
+    monkeypatch: pytest.MonkeyPatch, client_with_engine: TestClient
+) -> None:
+    from moviesentiment.serve import api as api_mod
+
+    monkeypatch.setattr(api_mod.settings, "api_key", "secret-token")
+    r = client_with_engine.post(
+        "/predict",
+        json={"texts": ["a film"]},
+        headers={"X-API-Key": "secret-token"},
+    )
+    assert r.status_code == 200
+
+
+def test_predict_open_when_api_key_unset(client_with_engine: TestClient) -> None:
+    r = client_with_engine.post("/predict", json={"texts": ["a film"]})
+    assert r.status_code == 200

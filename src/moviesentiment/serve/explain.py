@@ -40,12 +40,13 @@ def occlusion_attribution(
 
     deltas: list[tuple[str, float]] = []
     for i, p in enumerate(preds[1:]):
-        # Positive delta = baseline_conf - drop_conf (for the baseline label).
-        # If the drop changed the label, count the full confidence loss against the baseline.
+        # Delta = baseline_conf - P_drop(target_label). Binary head: when the
+        # drop flips the label, P_drop(target_label) = 1 - p.confidence.
+        # Result lives in [-1, 1]; positive means the token supported the label.
         if p.label == target_label:
             delta = baseline.confidence - p.confidence
         else:
-            delta = baseline.confidence + p.confidence  # label flipped
+            delta = baseline.confidence - (1.0 - p.confidence)
         deltas.append((tokens[i], float(delta)))
 
     deltas.sort(key=lambda x: x[1], reverse=True)
